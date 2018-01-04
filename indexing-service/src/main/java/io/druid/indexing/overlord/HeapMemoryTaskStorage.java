@@ -5,6 +5,7 @@
  * regarding copyright ownership. Metamarkets licenses this file
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
+ * "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at
  *
  * http://www.apache.org/licenses/LICENSE-2.0
@@ -124,11 +125,29 @@ public class HeapMemoryTaskStorage implements TaskStorage
       Preconditions.checkState(tasks.get(taskid).getStatus().isRunnable(), "Task status must be runnable: %s", taskid);
       log.info("Updating task %s to status: %s", taskid, status);
       tasks.put(taskid, tasks.get(taskid).withStatus(status));
+      if (tasks.size() > 5000) {
+        cleanOldTasks();
+      }
     }
     finally {
       giant.unlock();
     }
   }
+
+  // TODO: make it configurable
+  private void cleanOldTasks() {
+    long now = System.currentTimeMillis();
+    long twoDaysInMillis = 1000 * 60 * 60 * 24 * 2;
+    List<TaskStuff> oldTasks = tasks.values().stream().filter(taskStuff -> taskStuff.getStatus().isComplete()
+            && now - taskStuff.getCreatedDate().getMillis() > twoDaysInMillis).collect(Collectors.toList());
+    int count = 0;
+    for(TaskStuff t : oldTasks) {
+      count++;
+      tasks.remove(t.task.getId());
+    }
+    log.info("Cleaned %d tasks", count);
+  }
+
 
   @Override
   public Optional<TaskStatus> getStatus(String taskid)
