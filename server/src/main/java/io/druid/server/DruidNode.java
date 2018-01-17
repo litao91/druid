@@ -61,6 +61,9 @@ public class DruidNode
   private int plaintextPort = -1;
 
   @JsonProperty
+  private String locationFile = null;
+
+  @JsonProperty
   private boolean enablePlaintextPort = true;
 
   @JsonProperty
@@ -79,8 +82,21 @@ public class DruidNode
       boolean enableTlsPort
   )
   {
-    this(serviceName, host, plaintextPort, null, tlsPort, enablePlaintextPort, enableTlsPort);
+    this(serviceName, host, plaintextPort, null, tlsPort, enablePlaintextPort, enableTlsPort, null);
   }
+
+  public DruidNode(
+          String serviceName,
+          String host,
+          Integer plaintextPort,
+          Integer port,
+          Integer tlsPort,
+          Boolean enablePlaintextPort,
+          boolean enableTlsPort) {
+      this(serviceName, host, plaintextPort, port, tlsPort, enablePlaintextPort, enableTlsPort, null);
+
+  }
+
 
   /**
    * host = null     , port = null -> host = _default_, port = -1
@@ -107,7 +123,8 @@ public class DruidNode
       @JacksonInject @Named("servicePort") @JsonProperty("port") Integer port,
       @JacksonInject @Named("tlsServicePort") @JsonProperty("tlsPort") Integer tlsPort,
       @JsonProperty("enablePlaintextPort") Boolean enablePlaintextPort,
-      @JsonProperty("enableTlsPort") boolean enableTlsPort
+      @JsonProperty("enableTlsPort") boolean enableTlsPort,
+      @JsonProperty("locationFile") String locationFile
   )
   {
     init(

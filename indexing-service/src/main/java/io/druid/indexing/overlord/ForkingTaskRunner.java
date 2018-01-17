@@ -74,6 +74,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.*;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
@@ -235,21 +236,7 @@ public class ForkingTaskRunner implements TaskRunner, TaskLogStreamer
                         int tlsChildPort = -1;
                         int childChatHandlerPort = -1;
 
-                        if (node.isEnablePlaintextPort()) {
-                          if (config.isSeparateIngestionEndpoint()) {
-                            Pair<Integer, Integer> portPair = portFinder.findTwoConsecutiveUnusedPorts();
-                            childPort = portPair.lhs;
-                            childChatHandlerPort = portPair.rhs;
-                          } else {
-                            childPort = portFinder.findUnusedPort();
-                          }
-                        }
-
-                        if (node.isEnableTlsPort()) {
-                          tlsChildPort = tlsPortFinder.findUnusedPort();
-                        }
-
-                        final TaskLocation taskLocation = TaskLocation.create(childHost, childPort, tlsChildPort);
+                        TaskLocation taskLocation = TaskLocation.create(childHost, childPort, tlsChildPort);
 
                         try {
                           final Closer closer = Closer.create();
@@ -261,6 +248,7 @@ public class ForkingTaskRunner implements TaskRunner, TaskLogStreamer
                             final File taskFile = new File(taskDir, "task.json");
                             final File statusFile = new File(attemptDir, "status.json");
                             final File logFile = new File(taskDir, "log");
+                            final File locationFile = new File(attemptDir, "location.json");
 
                             // time to adjust process holders
                             synchronized (tasks) {
@@ -379,6 +367,9 @@ public class ForkingTaskRunner implements TaskRunner, TaskLogStreamer
                               command.add(StringUtils.format("-Ddruid.host=%s", childHost));
                               command.add(StringUtils.format("-Ddruid.port=%d", childPort));
                               command.add(StringUtils.format("-Ddruid.tlsPort=%d", tlsChildPort));
+                              command.add(StringUtils.format("-Ddruid.locationFile=%s",
+                                      locationFile.getAbsolutePath()));
+
                               /**
                                * These are not enabled per default to allow the user to either set or not set them
                                * Users are highly suggested to be set in druid.indexer.runner.javaOpts
@@ -431,6 +422,20 @@ public class ForkingTaskRunner implements TaskRunner, TaskLogStreamer
                               processHolder = taskWorkItem.processHolder;
                               processHolder.registerWithCloser(closer);
                             }
+
+                            // wait for the location file
+                            try (WatchService watcher = FileSystems.getDefault().newWatchService()) {
+                              Path watchedFile = Paths.get(locationFile.getAbsolutePath());
+                              WatchKey key = watchedFile.getParent().register(watcher, StandardWatchEventKinds.ENTRY_CREATE);
+                              while (key.reset() && processHolder.process.isAlive()) {
+                                WatchKey r = watcher.poll(5, TimeUnit.SECONDS);
+                                if (r == key && java.nio.file.Files.exists(watchedFile)) {
+                                  taskLocation = jsonMapper.readValue(locationFile, TaskLocation.class);
+                                  log.debug("Location updated with value" + taskLocation.toString());
+                                }
+                              }
+                            }
+
 
                             TaskRunnerUtils.notifyLocationChanged(listeners, task.getId(), taskLocation);
                             TaskRunnerUtils.notifyStatusChanged(

@@ -214,96 +214,6 @@ public class JettyServerModule extends JerseyServletModule
     // to fire on main exit. Related bug: https://github.com/druid-io/druid/pull/1627
     server.addBean(new ScheduledExecutorScheduler("JettyScheduler", true), true);
 
-    final List<ServerConnector> serverConnectors = new ArrayList<>();
-
-    if (node.isEnablePlaintextPort()) {
-      log.info("Creating http connector with port [%d]", node.getPlaintextPort());
-      HttpConfiguration httpConfiguration = new HttpConfiguration();
-      httpConfiguration.setRequestHeaderSize(config.getMaxRequestHeaderSize());
-      final ServerConnector connector = new ServerConnector(server, new HttpConnectionFactory(httpConfiguration));
-      connector.setPort(node.getPlaintextPort());
-      serverConnectors.add(connector);
-    }
-
-    final SslContextFactory sslContextFactory;
-    if (node.isEnableTlsPort()) {
-      log.info("Creating https connector with port [%d]", node.getTlsPort());
-      if (sslContextFactoryBinding == null) {
-        // Never trust all certificates by default
-        sslContextFactory = new SslContextFactory(false);
-        sslContextFactory.setKeyStorePath(tlsServerConfig.getKeyStorePath());
-        sslContextFactory.setKeyStoreType(tlsServerConfig.getKeyStoreType());
-        sslContextFactory.setKeyStorePassword(tlsServerConfig.getKeyStorePasswordProvider().getPassword());
-        sslContextFactory.setCertAlias(tlsServerConfig.getCertAlias());
-        sslContextFactory.setKeyManagerFactoryAlgorithm(tlsServerConfig.getKeyManagerFactoryAlgorithm() == null
-                                                        ? KeyManagerFactory.getDefaultAlgorithm()
-                                                        : tlsServerConfig.getKeyManagerFactoryAlgorithm());
-        sslContextFactory.setKeyManagerPassword(tlsServerConfig.getKeyManagerPasswordProvider() == null ?
-                                                null : tlsServerConfig.getKeyManagerPasswordProvider().getPassword());
-        if (tlsServerConfig.getIncludeCipherSuites() != null) {
-          sslContextFactory.setIncludeCipherSuites(
-              tlsServerConfig.getIncludeCipherSuites()
-                             .toArray(new String[tlsServerConfig.getIncludeCipherSuites().size()]));
-        }
-        if (tlsServerConfig.getExcludeCipherSuites() != null) {
-          sslContextFactory.setExcludeCipherSuites(
-              tlsServerConfig.getExcludeCipherSuites()
-                             .toArray(new String[tlsServerConfig.getExcludeCipherSuites().size()]));
-        }
-        if (tlsServerConfig.getIncludeProtocols() != null) {
-          sslContextFactory.setIncludeProtocols(
-              tlsServerConfig.getIncludeProtocols().toArray(new String[tlsServerConfig.getIncludeProtocols().size()]));
-        }
-        if (tlsServerConfig.getExcludeProtocols() != null) {
-          sslContextFactory.setExcludeProtocols(
-              tlsServerConfig.getExcludeProtocols().toArray(new String[tlsServerConfig.getExcludeProtocols().size()]));
-        }
-      } else {
-        sslContextFactory = sslContextFactoryBinding.getProvider().get();
-      }
-
-      final HttpConfiguration httpsConfiguration = new HttpConfiguration();
-      httpsConfiguration.setSecureScheme("https");
-      httpsConfiguration.setSecurePort(node.getTlsPort());
-      httpsConfiguration.addCustomizer(new SecureRequestCustomizer());
-      httpsConfiguration.setRequestHeaderSize(config.getMaxRequestHeaderSize());
-      final ServerConnector connector = new ServerConnector(
-          server,
-          new SslConnectionFactory(sslContextFactory, HttpVersion.HTTP_1_1.toString()),
-          new HttpConnectionFactory(httpsConfiguration)
-      );
-      connector.setPort(node.getTlsPort());
-      serverConnectors.add(connector);
-    } else {
-      sslContextFactory = null;
-    }
-
-    final ServerConnector[] connectors = new ServerConnector[serverConnectors.size()];
-    int index = 0;
-    for (ServerConnector connector : serverConnectors) {
-      connectors[index++] = connector;
-      connector.setIdleTimeout(Ints.checkedCast(config.getMaxIdleTime().toStandardDuration().getMillis()));
-      // workaround suggested in -
-      // https://bugs.eclipse.org/bugs/show_bug.cgi?id=435322#c66 for jetty half open connection issues during failovers
-      connector.setAcceptorPriorityDelta(-1);
-
-      List<ConnectionFactory> monitoredConnFactories = new ArrayList<>();
-      for (ConnectionFactory cf : connector.getConnectionFactories()) {
-        monitoredConnFactories.add(new JettyMonitoringConnectionFactory(cf, activeConnections));
-      }
-      connector.setConnectionFactories(monitoredConnFactories);
-    }
-
-    server.setConnectors(connectors);
-
-    // initialize server
-    JettyServerInitializer initializer = injector.getInstance(JettyServerInitializer.class);
-    try {
-      initializer.initialize(server, injector);
-    }
-    catch (Exception e) {
-      throw new RE(e, "server initialization exception");
-    }
 
     lifecycle.addHandler(
         new Lifecycle.Handler()
@@ -311,8 +221,104 @@ public class JettyServerModule extends JerseyServletModule
           @Override
           public void start() throws Exception
           {
-            log.info("Starting Jetty Server...");
-            server.start();
+            final List<ServerConnector> serverConnectors = new ArrayList<>();
+            HttpConfiguration httpConfiguration = null;
+            if (node.isEnablePlaintextPort()) {
+              log.info("Creating http connector with port [%d]", node.getPlaintextPort());
+              httpConfiguration = new HttpConfiguration();
+              httpConfiguration.setRequestHeaderSize(config.getMaxRequestHeaderSize());
+            }
+
+            while (true) {
+              serverConnectors.clear();
+              if (node.isEnablePlaintextPort()) {
+                final ServerConnector connector = new ServerConnector(server, new HttpConnectionFactory(httpConfiguration));
+                connector.setPort(node.getPlaintextPort());
+                serverConnectors.add(connector);
+              }
+
+              final SslContextFactory sslContextFactory;
+              if (node.isEnableTlsPort()) {
+                log.info("Creating https connector with port [%d]", node.getTlsPort());
+                if (sslContextFactoryBinding == null) {
+                  // Never trust all certificates by default
+                  sslContextFactory = new SslContextFactory(false);
+                  sslContextFactory.setKeyStorePath(tlsServerConfig.getKeyStorePath());
+                  sslContextFactory.setKeyStoreType(tlsServerConfig.getKeyStoreType());
+                  sslContextFactory.setKeyStorePassword(tlsServerConfig.getKeyStorePasswordProvider().getPassword());
+                  sslContextFactory.setCertAlias(tlsServerConfig.getCertAlias());
+                  sslContextFactory.setKeyManagerFactoryAlgorithm(tlsServerConfig.getKeyManagerFactoryAlgorithm() == null
+                      ? KeyManagerFactory.getDefaultAlgorithm()
+                      : tlsServerConfig.getKeyManagerFactoryAlgorithm());
+                  sslContextFactory.setKeyManagerPassword(tlsServerConfig.getKeyManagerPasswordProvider() == null ?
+                      null : tlsServerConfig.getKeyManagerPasswordProvider().getPassword());
+                  if (tlsServerConfig.getIncludeCipherSuites() != null) {
+                    sslContextFactory.setIncludeCipherSuites(
+                        tlsServerConfig.getIncludeCipherSuites()
+                            .toArray(new String[tlsServerConfig.getIncludeCipherSuites().size()]));
+                  }
+                  if (tlsServerConfig.getExcludeCipherSuites() != null) {
+                    sslContextFactory.setExcludeCipherSuites(
+                        tlsServerConfig.getExcludeCipherSuites()
+                            .toArray(new String[tlsServerConfig.getExcludeCipherSuites().size()]));
+                  }
+                  if (tlsServerConfig.getIncludeProtocols() != null) {
+                    sslContextFactory.setIncludeProtocols(
+                        tlsServerConfig.getIncludeProtocols().toArray(new String[tlsServerConfig.getIncludeProtocols().size()]));
+                  }
+                  if (tlsServerConfig.getExcludeProtocols() != null) {
+                    sslContextFactory.setExcludeProtocols(
+                        tlsServerConfig.getExcludeProtocols().toArray(new String[tlsServerConfig.getExcludeProtocols().size()]));
+                  }
+                } else {
+                  sslContextFactory = sslContextFactoryBinding.getProvider().get();
+                }
+
+                final HttpConfiguration httpsConfiguration = new HttpConfiguration();
+                httpsConfiguration.setSecureScheme("https");
+                httpsConfiguration.setSecurePort(node.getTlsPort());
+                httpsConfiguration.addCustomizer(new SecureRequestCustomizer());
+                httpsConfiguration.setRequestHeaderSize(config.getMaxRequestHeaderSize());
+                final ServerConnector connector = new ServerConnector(
+                    server,
+                    new SslConnectionFactory(sslContextFactory, HttpVersion.HTTP_1_1.toString()),
+                    new HttpConnectionFactory(httpsConfiguration)
+                );
+                connector.setPort(node.getTlsPort());
+                serverConnectors.add(connector);
+              } else {
+                sslContextFactory = null;
+              }
+
+              final ServerConnector[] connectors = new ServerConnector[serverConnectors.size()];
+              int index = 0;
+              for (ServerConnector connector : serverConnectors) {
+                connectors[index++] = connector;
+                connector.setIdleTimeout(Ints.checkedCast(config.getMaxIdleTime().toStandardDuration().getMillis()));
+                // workaround suggested in -
+                // https://bugs.eclipse.org/bugs/show_bug.cgi?id=435322#c66 for jetty half open connection issues during failovers
+                connector.setAcceptorPriorityDelta(-1);
+
+                List<ConnectionFactory> monitoredConnFactories = new ArrayList<>();
+                for (ConnectionFactory cf : connector.getConnectionFactories()) {
+                  monitoredConnFactories.add(new JettyMonitoringConnectionFactory(cf, activeConnections));
+                }
+                connector.setConnectionFactories(monitoredConnFactories);
+              }
+
+              server.setConnectors(connectors);
+
+              // initialize server
+              JettyServerInitializer initializer = injector.getInstance(JettyServerInitializer.class);
+              try {
+                initializer.initialize(server, injector);
+              } catch (Exception e) {
+                throw new RE(e, "server initialization exception");
+              }
+
+              log.info("Starting Jetty Server...");
+              server.start();
+            }
             if (node.isEnableTlsPort()) {
               // Perform validation
               Preconditions.checkNotNull(sslContextFactory);
