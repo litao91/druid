@@ -66,6 +66,7 @@ import org.eclipse.jetty.util.thread.QueuedThreadPool;
 import org.eclipse.jetty.util.thread.ScheduledExecutorScheduler;
 
 import javax.servlet.ServletException;
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -133,8 +134,7 @@ public class JettyServerModule extends JerseyServletModule
       final Injector injector, final Lifecycle lifecycle, @Self final DruidNode node, final ServerConfig config
   )
   {
-    final Server server = makeJettyServer(node, config);
-    initializeServer(injector, lifecycle, server);
+    final Server server = makeAndInitializeServer(injector, lifecycle, node, config);
     return server;
   }
 
@@ -156,8 +156,7 @@ public class JettyServerModule extends JerseyServletModule
     return provider;
   }
 
-  static Server makeJettyServer(DruidNode node, ServerConfig config)
-  {
+  static Server makeAndInitializeServer(Injector injector, Lifecycle lifecycle, DruidNode node, ServerConfig config)  {
     final QueuedThreadPool threadPool = new QueuedThreadPool();
     threadPool.setMinThreads(config.getNumThreads());
     threadPool.setMaxThreads(config.getNumThreads());
@@ -183,12 +182,6 @@ public class JettyServerModule extends JerseyServletModule
     connector.setConnectionFactories(monitoredConnFactories);
 
     server.setConnectors(new Connector[]{connector});
-
-    return server;
-  }
-
-  static void initializeServer(Injector injector, Lifecycle lifecycle, final Server server)
-  {
     JettyServerInitializer initializer = injector.getInstance(JettyServerInitializer.class);
     try {
       initializer.initialize(server, injector);
@@ -203,7 +196,13 @@ public class JettyServerModule extends JerseyServletModule
           @Override
           public void start() throws Exception
           {
-            server.start();
+            try {
+              server.start();
+            } catch (java.net.BindException e) {
+              String locationFile = node.getPortConflictFlagFile();
+              new File(locationFile).createNewFile();
+              throw e;
+            }
           }
 
           @Override
@@ -218,6 +217,7 @@ public class JettyServerModule extends JerseyServletModule
           }
         }
     );
+    return server;
   }
 
   @Provides
