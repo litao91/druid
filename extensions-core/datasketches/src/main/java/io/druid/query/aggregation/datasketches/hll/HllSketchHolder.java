@@ -5,6 +5,8 @@ import com.google.common.collect.Ordering;
 import com.yahoo.memory.Memory;
 import com.yahoo.sketches.hll.HllSketch;
 import io.druid.java.util.common.ISE;
+import io.druid.java.util.common.StringUtils;
+import org.apache.commons.codec.binary.Base64;
 
 import java.util.Comparator;
 
@@ -45,6 +47,14 @@ public class HllSketchHolder {
       cachedEstimate = getSketch().getEstimate();
     }
     return cachedEstimate.doubleValue();
+  }
+
+  private static HllSketch deserializeFromBase64EncodedString(String str) {
+    return deserializedFromByteArray(Base64.decodeBase64(StringUtils.toUtf8(str)));
+  }
+
+  private static HllSketch deserializedFromByteArray(byte[] data) {
+    return HllSketch.heapify(data);
   }
 
   private static HllSketch deserializeFromMemory(Memory mem) {
