@@ -114,7 +114,7 @@ public class HllSketchHolder {
    * @param lgK
    * @return
    */
-  public HllSketchHolder combine(Object o1, Object o2, int lgK) {
+  public static HllSketchHolder combine(Object o1, Object o2, int lgK) {
     HllSketchHolder holder1 = (HllSketchHolder) o1;
     HllSketchHolder holder2 = (HllSketchHolder) o2;
     if (holder1.obj instanceof Union) {

@@ -1,12 +1,20 @@
 package io.druid.query.aggregation.datasketches.hll;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.jaxrs.json.annotation.JSONP;
 import com.google.common.base.Preconditions;
+import com.google.common.primitives.Ints;
+import com.yahoo.sketches.hll.Union;
+import io.druid.java.util.common.StringUtils;
 import io.druid.query.aggregation.Aggregator;
 import io.druid.query.aggregation.AggregatorFactory;
 import io.druid.query.aggregation.BufferAggregator;
+import io.druid.query.aggregation.datasketches.theta.SketchBufferAggregator;
 import io.druid.segment.ColumnSelectorFactory;
 import io.druid.segment.ObjectColumnSelector;
 
+import java.nio.ByteBuffer;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
@@ -31,7 +39,7 @@ public abstract class HllSketchAggregatorFactory extends AggregatorFactory {
   public Aggregator factorize(ColumnSelectorFactory metricFactory) {
     ObjectColumnSelector selector = metricFactory.makeObjectColumnSelector(fieldName);
     if (selector == null) {
-
+      return new EmptyHllSketchAggregator();
     } else {
       return new HllSketchAggregator(selector, lgk);
     }
@@ -39,61 +47,103 @@ public abstract class HllSketchAggregatorFactory extends AggregatorFactory {
 
   @Override
   public BufferAggregator factorizeBuffered(ColumnSelectorFactory metricFactory) {
-    return null;
+    ObjectColumnSelector selector = metricFactory.makeObjectColumnSelector(fieldName);
+    if (selector == null) {
+      return EmptyHllSketchBufferAggregator.instance();
+    } else {
+      return new SketchBufferAggregator(selector, lgk, getMaxIntermediateSize());
+    }
   }
 
   @Override
   public Comparator getComparator() {
-    return null;
+    return HllSketchHolder.COMPARATOR;
   }
 
   @Override
   public Object combine(Object lhs, Object rhs) {
-    return null;
-  }
-
-  @Override
-  public AggregatorFactory getCombiningFactory() {
-    return null;
-  }
-
-  @Override
-  public List<AggregatorFactory> getRequiredColumns() {
-    return null;
+    return HllSketchHolder.combine(lhs, rhs, lgk);
   }
 
   @Override
   public Object deserialize(Object object) {
-    return null;
+    return HllSketchHolder.deserialize(object);
   }
 
   @Override
-  public Object finalizeComputation(Object object) {
-    return null;
-  }
-
-  @Override
+  @JsonProperty
   public String getName() {
-    return null;
+    return name;
+  }
+
+  @JsonProperty
+  public String getFieldName() {
+    return fieldName;
+  }
+
+  @JsonProperty
+  public int getLgk() {
+    return lgk;
   }
 
   @Override
   public List<String> requiredFields() {
-    return null;
-  }
-
-  @Override
-  public String getTypeName() {
-    return null;
+    return Collections.singletonList(fieldName);
   }
 
   @Override
   public int getMaxIntermediateSize() {
-    return 0;
+    return Union.getMaxSerializationBytes(lgk);
   }
 
   @Override
   public byte[] getCacheKey() {
-    return new byte[0];
+    byte[] fieldNameBytes = StringUtils.toUtf8(fieldName);
+    return ByteBuffer.allocate(1 + Ints.BYTES + fieldNameBytes.length)
+        .put(cacheId)
+        .putInt(lgk)
+        .put(fieldNameBytes)
+        .array();
+  }
+
+  @Override
+  public String toString() {
+    return getClass().getSimpleName() + "{"
+        + "fieldName='" + fieldName + '\''
+        + ", name='" + name + '\''
+        + ", lgK=" + lgk
+        + '}';
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+
+    HllSketchAggregatorFactory that = (HllSketchAggregatorFactory) o;
+
+    if (lgk != that.lgk) {
+      return false;
+    }
+    if (cacheId != that.cacheId) {
+      return false;
+    }
+    if (!name.equals(that.name)) {
+      return false;
+    }
+    return fieldName.equals(that.fieldName);
+  }
+
+  @Override
+  public int hashCode() {
+    int result = name.hashCode();
+    result = 31 * result + fieldName.hashCode();
+    result = 31 * result + lgk;
+    result = 31 * result + (int) cacheId;
+    return result;
   }
 }
