@@ -24,31 +24,27 @@ import com.yahoo.sketches.theta.SetOperation;
 import com.yahoo.sketches.theta.Union;
 import io.druid.java.util.common.ISE;
 import io.druid.query.aggregation.Aggregator;
-import io.druid.segment.BaseObjectColumnValueSelector;
+import io.druid.segment.ObjectColumnSelector;
 
 import java.util.List;
 
-public class SketchAggregator implements Aggregator
-{
-  private final BaseObjectColumnValueSelector selector;
+public class SketchAggregator implements Aggregator {
+  private final ObjectColumnSelector selector;
   private final int size;
   private Union union;
 
-  public SketchAggregator(BaseObjectColumnValueSelector selector, int size)
-  {
+  public SketchAggregator(ObjectColumnSelector selector, int size) {
     this.selector = selector;
     this.size = size;
   }
 
-  private void initUnion()
-  {
+  private void initUnion() {
     union = new SynchronizedUnion((Union) SetOperation.builder().setNominalEntries(size).build(Family.UNION));
   }
 
   @Override
-  public void aggregate()
-  {
-    Object update = selector.getObject();
+  public void aggregate() {
+    Object update = selector.get();
     if (update == null) {
       return;
     }
@@ -59,8 +55,12 @@ public class SketchAggregator implements Aggregator
   }
 
   @Override
-  public Object get()
-  {
+  public void reset() {
+    union.reset();
+  }
+
+  @Override
+  public Object get() {
     if (union == null) {
       return SketchHolder.EMPTY;
     }
@@ -73,31 +73,21 @@ public class SketchAggregator implements Aggregator
   }
 
   @Override
-  public float getFloat()
-  {
+  public float getFloat() {
     throw new UnsupportedOperationException("Not implemented");
   }
 
   @Override
-  public long getLong()
-  {
+  public long getLong() {
     throw new UnsupportedOperationException("Not implemented");
   }
 
   @Override
-  public double getDouble()
-  {
-    throw new UnsupportedOperationException("Not implemented");
-  }
-
-  @Override
-  public void close()
-  {
+  public void close() {
     union = null;
   }
 
-  static void updateUnion(Union union, Object update)
-  {
+  static void updateUnion(Union union, Object update) {
     if (update instanceof SketchHolder) {
       ((SketchHolder) update).updateUnion(union);
     } else if (update instanceof String) {

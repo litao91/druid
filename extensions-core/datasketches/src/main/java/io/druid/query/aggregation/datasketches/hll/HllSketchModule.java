@@ -1,17 +1,14 @@
 package io.druid.query.aggregation.datasketches.hll;
 
 import com.fasterxml.jackson.databind.Module;
-import com.fasterxml.jackson.databind.jsontype.NamedType;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.google.inject.Binder;
 import io.druid.initialization.DruidModule;
-import io.druid.segment.serde.ComplexMetricSerde;
 import io.druid.segment.serde.ComplexMetrics;
 
 import java.util.Arrays;
 import java.util.List;
 
-import static java.util.Arrays.asList;
 
 public class HllSketchModule implements DruidModule {
   public static final String HLL_SKETCH = "hllSketch";
@@ -41,6 +38,7 @@ public class HllSketchModule implements DruidModule {
   public List<? extends Module> getJacksonModules() {
     return Arrays.asList(
         new SimpleModule("HllSketchModule")
+        .addSerializer(HllSketchHolder.class, new HllSketchHolderJsonSerializer())
     );
   }
 }
