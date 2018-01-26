@@ -23,16 +23,17 @@ import com.yahoo.sketches.quantiles.UpdateDoublesSketch;
 
 import io.druid.query.aggregation.Aggregator;
 import io.druid.segment.ColumnValueSelector;
+import io.druid.segment.ObjectColumnSelector;
 
 public class DoublesSketchBuildAggregator implements Aggregator
 {
 
-  private final ColumnValueSelector<Double> valueSelector;
+  private final ObjectColumnSelector valueSelector;
   private final int size;
 
   private UpdateDoublesSketch sketch;
 
-  public DoublesSketchBuildAggregator(final ColumnValueSelector<Double> valueSelector, final int size)
+  public DoublesSketchBuildAggregator(final ObjectColumnSelector valueSelector, final int size)
   {
     this.valueSelector = valueSelector;
     this.size = size;
@@ -42,7 +43,12 @@ public class DoublesSketchBuildAggregator implements Aggregator
   @Override
   public synchronized void aggregate()
   {
-    sketch.update(valueSelector.getDouble());
+    sketch.update((Double)valueSelector.get());
+  }
+
+  @Override
+  public void reset() {
+
   }
 
   @Override

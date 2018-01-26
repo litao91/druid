@@ -38,6 +38,8 @@ import com.yahoo.sketches.quantiles.DoublesSketch;
 public class DoublesSketchToQuantilePostAggregator implements PostAggregator
 {
 
+  public static final byte QUANTILES_DOUBLES_SKETCH_TO_QUANTILE_CACHE_TYPE_ID = 0x1E;
+
   private final String name;
   private final PostAggregator field;
   private final double fraction;
@@ -136,7 +138,7 @@ public class DoublesSketchToQuantilePostAggregator implements PostAggregator
   @Override
   public byte[] getCacheKey()
   {
-    return new CacheKeyBuilder(AggregatorUtil.QUANTILES_DOUBLES_SKETCH_TO_QUANTILE_CACHE_TYPE_ID)
+    return new CacheKeyBuilder(QUANTILES_DOUBLES_SKETCH_TO_QUANTILE_CACHE_TYPE_ID)
         .appendCacheable(field).appendDouble(fraction).build();
   }
 

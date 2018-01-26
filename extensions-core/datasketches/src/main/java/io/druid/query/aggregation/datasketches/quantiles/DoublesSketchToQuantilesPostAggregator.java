@@ -36,6 +36,7 @@ import java.util.Set;
 
 public class DoublesSketchToQuantilesPostAggregator implements PostAggregator
 {
+  public static final byte QUANTILES_DOUBLES_SKETCH_TO_QUANTILES_CACHE_TYPE_ID = 0x1F;
 
   private final String name;
   private final PostAggregator field;
@@ -129,7 +130,7 @@ public class DoublesSketchToQuantilesPostAggregator implements PostAggregator
   public byte[] getCacheKey()
   {
     final CacheKeyBuilder builder = new CacheKeyBuilder(
-        AggregatorUtil.QUANTILES_DOUBLES_SKETCH_TO_QUANTILES_CACHE_TYPE_ID).appendCacheable(field);
+        QUANTILES_DOUBLES_SKETCH_TO_QUANTILES_CACHE_TYPE_ID).appendCacheable(field);
     for (final double value : fractions) {
       builder.appendDouble(value);
     }

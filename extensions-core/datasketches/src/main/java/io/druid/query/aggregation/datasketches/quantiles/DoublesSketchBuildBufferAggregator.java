@@ -28,21 +28,22 @@ import com.yahoo.sketches.quantiles.UpdateDoublesSketch;
 import io.druid.query.aggregation.BufferAggregator;
 import io.druid.query.monomorphicprocessing.RuntimeShapeInspector;
 import io.druid.segment.ColumnValueSelector;
+import io.druid.segment.ObjectColumnSelector;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 
 public class DoublesSketchBuildBufferAggregator implements BufferAggregator
 {
 
-  private final ColumnValueSelector<Double> selector;
+  private final ObjectColumnSelector selector;
   private final int size;
   private final int maxIntermediateSize;
 
   private final IdentityHashMap<ByteBuffer, WritableMemory> memCache = new IdentityHashMap<>();
   private final IdentityHashMap<ByteBuffer, Int2ObjectMap<UpdateDoublesSketch>> sketches = new IdentityHashMap<>();
 
-  public DoublesSketchBuildBufferAggregator(final ColumnValueSelector<Double> valueSelector, final int size,
-      final int maxIntermediateSize)
+  public DoublesSketchBuildBufferAggregator(final ObjectColumnSelector valueSelector, final int size,
+                                            final int maxIntermediateSize)
   {
     this.selector = valueSelector;
     this.size = size;
@@ -62,7 +63,7 @@ public class DoublesSketchBuildBufferAggregator implements BufferAggregator
   public synchronized void aggregate(final ByteBuffer buffer, final int position)
   {
     final UpdateDoublesSketch sketch = sketches.get(buffer).get(position);
-    sketch.update(selector.getDouble());
+    sketch.update((Double)selector.get());
   }
 
   @Override

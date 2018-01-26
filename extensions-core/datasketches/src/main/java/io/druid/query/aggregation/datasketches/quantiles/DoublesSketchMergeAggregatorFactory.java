@@ -21,40 +21,34 @@ package io.druid.query.aggregation.datasketches.quantiles;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.yahoo.sketches.quantiles.DoublesSketch;
 import io.druid.query.aggregation.Aggregator;
-import io.druid.query.aggregation.AggregatorUtil;
 import io.druid.query.aggregation.BufferAggregator;
 import io.druid.segment.ColumnSelectorFactory;
-import io.druid.segment.ColumnValueSelector;
-import io.druid.segment.NilColumnValueSelector;
+import io.druid.segment.ObjectColumnSelector;
 
-public class DoublesSketchMergeAggregatorFactory extends DoublesSketchAggregatorFactory
-{
+public class DoublesSketchMergeAggregatorFactory extends DoublesSketchAggregatorFactory {
+  public static final byte QUANTILES_DOUBLES_SKETCH_MERGE_CACHE_TYPE_ID = 0x1C;
 
   @JsonCreator
   public DoublesSketchMergeAggregatorFactory(
       @JsonProperty("name") final String name,
-      @JsonProperty("k") final Integer k)
-  {
-    super(name, name, k, AggregatorUtil.QUANTILES_DOUBLES_SKETCH_MERGE_CACHE_TYPE_ID);
+      @JsonProperty("k") final Integer k) {
+    super(name, name, k, QUANTILES_DOUBLES_SKETCH_MERGE_CACHE_TYPE_ID);
   }
 
   @Override
-  public Aggregator factorize(final ColumnSelectorFactory metricFactory)
-  {
-    final ColumnValueSelector<DoublesSketch> selector = metricFactory.makeColumnValueSelector(getFieldName());
-    if (selector instanceof NilColumnValueSelector) {
+  public Aggregator factorize(final ColumnSelectorFactory metricFactory) {
+    final ObjectColumnSelector selector = metricFactory.makeObjectColumnSelector(getFieldName());
+    if (selector == null) {
       return new DoublesSketchNoOpAggregator();
     }
     return new DoublesSketchMergeAggregator(selector, getK());
   }
 
   @Override
-  public BufferAggregator factorizeBuffered(final ColumnSelectorFactory metricFactory)
-  {
-    final ColumnValueSelector<DoublesSketch> selector = metricFactory.makeColumnValueSelector(getFieldName());
-    if (selector instanceof NilColumnValueSelector) {
+  public BufferAggregator factorizeBuffered(final ColumnSelectorFactory metricFactory) {
+    final ObjectColumnSelector selector = metricFactory.makeObjectColumnSelector(getFieldName());
+    if (selector == null) {
       return new DoublesSketchNoOpBufferAggregator();
     }
     return new DoublesSketchMergeBufferAggregator(selector, getK(), getMaxIntermediateSize());

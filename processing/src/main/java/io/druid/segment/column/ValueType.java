@@ -22,20 +22,25 @@ package io.druid.segment.column;
 import com.fasterxml.jackson.annotation.JsonCreator;
 
 /**
-*/
-public enum ValueType
-{
+ */
+public enum ValueType {
   FLOAT,
   LONG,
   STRING,
   COMPLEX;
 
   @JsonCreator
-  public static ValueType fromString(String name)
-  {
+  public static ValueType fromString(String name) {
     if (name == null) {
       return null;
     }
     return valueOf(name.toUpperCase());
+  }
+
+  public static boolean isNumeric(ValueType type) {
+    if (type == ValueType.LONG || type == ValueType.FLOAT) {
+      return true;
+    }
+    return false;
   }
 }

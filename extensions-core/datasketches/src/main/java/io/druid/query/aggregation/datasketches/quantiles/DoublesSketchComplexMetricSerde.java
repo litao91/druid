@@ -32,7 +32,6 @@ import io.druid.segment.serde.ComplexColumnPartSupplier;
 import io.druid.segment.serde.ComplexMetricExtractor;
 import io.druid.segment.serde.ComplexMetricSerde;
 import io.druid.segment.serde.LargeColumnSupportedComplexColumnSerializer;
-import io.druid.segment.writeout.SegmentWriteOutMedium;
 
 import java.nio.ByteBuffer;
 
@@ -107,10 +106,4 @@ public class DoublesSketchComplexMetricSerde extends ComplexMetricSerde
     builder.setComplexColumn(new ComplexColumnPartSupplier(getTypeName(), column));
   }
 
-  // support large columns
-  @Override
-  public GenericColumnSerializer getSerializer(SegmentWriteOutMedium segmentWriteOutMedium, String column)
-  {
-    return LargeColumnSupportedComplexColumnSerializer.create(segmentWriteOutMedium, column, this.getObjectStrategy());
-  }
 }

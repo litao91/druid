@@ -34,8 +34,8 @@ import java.util.Comparator;
 import java.util.Map;
 import java.util.Set;
 
-public class DoublesSketchToHistogramPostAggregator implements PostAggregator
-{
+public class DoublesSketchToHistogramPostAggregator implements PostAggregator {
+  public static final byte QUANTILES_DOUBLES_SKETCH_TO_HISTOGRAM_CACHE_TYPE_ID = 0x1D;
 
   private final String name;
   private final PostAggregator field;
@@ -45,16 +45,14 @@ public class DoublesSketchToHistogramPostAggregator implements PostAggregator
   public DoublesSketchToHistogramPostAggregator(
       @JsonProperty("name") final String name,
       @JsonProperty("field") final PostAggregator field,
-      @JsonProperty("splitPoints") final double[] splitPoints)
-  {
+      @JsonProperty("splitPoints") final double[] splitPoints) {
     this.name = Preconditions.checkNotNull(name, "name is null");
     this.field = Preconditions.checkNotNull(field, "field is null");
     this.splitPoints = Preconditions.checkNotNull(splitPoints, "array of split points is null");
   }
 
   @Override
-  public Object compute(final Map<String, Object> combinedAggregators)
-  {
+  public Object compute(final Map<String, Object> combinedAggregators) {
     final DoublesSketch sketch = (DoublesSketch) field.compute(combinedAggregators);
     final double[] histogram = sketch.getPMF(splitPoints);
     for (int i = 0; i < histogram.length; i++) {
@@ -65,38 +63,32 @@ public class DoublesSketchToHistogramPostAggregator implements PostAggregator
 
   @Override
   @JsonProperty
-  public String getName()
-  {
+  public String getName() {
     return name;
   }
 
   @JsonProperty
-  public PostAggregator getField()
-  {
+  public PostAggregator getField() {
     return field;
   }
 
   @JsonProperty
-  public double[] getSplitPoints()
-  {
+  public double[] getSplitPoints() {
     return splitPoints;
   }
 
   @Override
-  public Comparator<double[]> getComparator()
-  {
+  public Comparator<double[]> getComparator() {
     throw new IAE("Comparing histograms is not supported");
   }
 
   @Override
-  public Set<String> getDependentFields()
-  {
+  public Set<String> getDependentFields() {
     return field.getDependentFields();
   }
 
   @Override
-  public String toString()
-  {
+  public String toString() {
     return getClass().getSimpleName() + "{" +
         "name='" + name + '\'' +
         ", field=" + field +
@@ -105,8 +97,7 @@ public class DoublesSketchToHistogramPostAggregator implements PostAggregator
   }
 
   @Override
-  public boolean equals(final Object o)
-  {
+  public boolean equals(final Object o) {
     if (this == o) {
       return true;
     }
@@ -124,18 +115,16 @@ public class DoublesSketchToHistogramPostAggregator implements PostAggregator
   }
 
   @Override
-  public int hashCode()
-  {
+  public int hashCode() {
     int hashCode = name.hashCode() * 31 + field.hashCode();
     hashCode = hashCode * 31 + Arrays.hashCode(splitPoints);
     return hashCode;
   }
 
   @Override
-  public byte[] getCacheKey()
-  {
+  public byte[] getCacheKey() {
     final CacheKeyBuilder builder = new CacheKeyBuilder(
-        AggregatorUtil.QUANTILES_DOUBLES_SKETCH_TO_HISTOGRAM_CACHE_TYPE_ID).appendCacheable(field);
+        QUANTILES_DOUBLES_SKETCH_TO_HISTOGRAM_CACHE_TYPE_ID).appendCacheable(field);
     for (final double value : splitPoints) {
       builder.appendDouble(value);
     }
@@ -143,8 +132,7 @@ public class DoublesSketchToHistogramPostAggregator implements PostAggregator
   }
 
   @Override
-  public PostAggregator decorate(final Map<String, AggregatorFactory> map)
-  {
+  public PostAggregator decorate(final Map<String, AggregatorFactory> map) {
     return this;
   }
 

@@ -29,12 +29,10 @@ import com.yahoo.sketches.quantiles.DoublesUnion;
 import io.druid.query.aggregation.Aggregator;
 import io.druid.query.aggregation.AggregatorFactory;
 import io.druid.query.aggregation.AggregatorFactoryNotMergeableException;
-import io.druid.query.aggregation.AggregatorUtil;
 import io.druid.query.aggregation.BufferAggregator;
 import io.druid.query.cache.CacheKeyBuilder;
 import io.druid.segment.ColumnSelectorFactory;
-import io.druid.segment.ColumnValueSelector;
-import io.druid.segment.NilColumnValueSelector;
+import io.druid.segment.ObjectColumnSelector;
 import io.druid.segment.column.ValueType;
 
 import java.util.Collections;
@@ -44,6 +42,7 @@ import java.util.Objects;
 
 public class DoublesSketchAggregatorFactory extends AggregatorFactory
 {
+  public static final byte QUANTILES_DOUBLES_SKETCH_BUILD_CACHE_TYPE_ID = 0x1B;
 
   private static final int DEFAULT_K = 128;
 
@@ -61,7 +60,7 @@ public class DoublesSketchAggregatorFactory extends AggregatorFactory
       @JsonProperty("fieldName") final String fieldName,
       @JsonProperty("k") final Integer k)
   {
-    this(name, fieldName, k, AggregatorUtil.QUANTILES_DOUBLES_SKETCH_BUILD_CACHE_TYPE_ID);
+    this(name, fieldName, k, QUANTILES_DOUBLES_SKETCH_BUILD_CACHE_TYPE_ID);
   }
 
   DoublesSketchAggregatorFactory(final String name, final String fieldName, final Integer k, final byte cacheTypeId)
@@ -84,14 +83,14 @@ public class DoublesSketchAggregatorFactory extends AggregatorFactory
   {
     if (metricFactory.getColumnCapabilities(fieldName) != null
         && ValueType.isNumeric(metricFactory.getColumnCapabilities(fieldName).getType())) {
-      final ColumnValueSelector<Double> selector = metricFactory.makeColumnValueSelector(fieldName);
-      if (selector instanceof NilColumnValueSelector) {
+      final ObjectColumnSelector selector = metricFactory.makeObjectColumnSelector(fieldName);
+      if (selector  == null) {
         return new DoublesSketchNoOpAggregator();
       }
       return new DoublesSketchBuildAggregator(selector, k);
     }
-    final ColumnValueSelector<DoublesSketch> selector = metricFactory.makeColumnValueSelector(fieldName);
-    if (selector instanceof NilColumnValueSelector) {
+    final ObjectColumnSelector selector = metricFactory.makeObjectColumnSelector(fieldName);
+    if (selector == null) {
       return new DoublesSketchNoOpAggregator();
     }
     return new DoublesSketchMergeAggregator(selector, k);
@@ -102,14 +101,14 @@ public class DoublesSketchAggregatorFactory extends AggregatorFactory
   {
     if (metricFactory.getColumnCapabilities(fieldName) != null
         && ValueType.isNumeric(metricFactory.getColumnCapabilities(fieldName).getType())) {
-      final ColumnValueSelector<Double> selector = metricFactory.makeColumnValueSelector(fieldName);
-      if (selector instanceof NilColumnValueSelector) {
+      final ObjectColumnSelector selector = metricFactory.makeObjectColumnSelector(fieldName);
+      if (selector instanceof ObjectColumnSelector) {
         return new DoublesSketchNoOpBufferAggregator();
       }
       return new DoublesSketchBuildBufferAggregator(selector, k, getMaxIntermediateSize());
     }
-    final ColumnValueSelector<DoublesSketch> selector = metricFactory.makeColumnValueSelector(fieldName);
-    if (selector instanceof NilColumnValueSelector) {
+    final ObjectColumnSelector selector = metricFactory.makeObjectColumnSelector(fieldName);
+    if (selector == null) {
       return new DoublesSketchNoOpBufferAggregator();
     }
     return new DoublesSketchMergeBufferAggregator(selector, k, getMaxIntermediateSize());
