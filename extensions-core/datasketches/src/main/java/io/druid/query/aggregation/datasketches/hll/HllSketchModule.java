@@ -1,6 +1,7 @@
 package io.druid.query.aggregation.datasketches.hll;
 
 import com.fasterxml.jackson.databind.Module;
+import com.fasterxml.jackson.databind.jsontype.NamedType;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.google.inject.Binder;
 import io.druid.initialization.DruidModule;
@@ -38,6 +39,10 @@ public class HllSketchModule implements DruidModule {
   public List<? extends Module> getJacksonModules() {
     return Arrays.asList(
         new SimpleModule("HllSketchModule")
+            .registerSubtypes(
+                new NamedType(HllSketchMergeAggregatorFactory.class, HLL_SKETCH),
+                new NamedType(HllSketchEstimatePostAggregator.class, HLL_SKETCH_ESTIMATE_POST_AGG)
+            )
         .addSerializer(HllSketchHolder.class, new HllSketchHolderJsonSerializer())
     );
   }
