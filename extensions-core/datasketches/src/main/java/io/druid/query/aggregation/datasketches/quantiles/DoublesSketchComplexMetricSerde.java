@@ -24,14 +24,12 @@ import com.yahoo.sketches.quantiles.DoublesSketch;
 import com.yahoo.sketches.quantiles.UpdateDoublesSketch;
 import io.druid.data.input.InputRow;
 import io.druid.java.util.common.IAE;
-import io.druid.segment.GenericColumnSerializer;
 import io.druid.segment.column.ColumnBuilder;
 import io.druid.segment.data.GenericIndexed;
 import io.druid.segment.data.ObjectStrategy;
 import io.druid.segment.serde.ComplexColumnPartSupplier;
 import io.druid.segment.serde.ComplexMetricExtractor;
 import io.druid.segment.serde.ComplexMetricSerde;
-import io.druid.segment.serde.LargeColumnSupportedComplexColumnSerializer;
 
 import java.nio.ByteBuffer;
 

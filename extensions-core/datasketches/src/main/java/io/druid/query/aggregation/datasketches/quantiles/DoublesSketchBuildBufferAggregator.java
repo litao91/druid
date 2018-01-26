@@ -27,7 +27,6 @@ import com.yahoo.sketches.quantiles.UpdateDoublesSketch;
 
 import io.druid.query.aggregation.BufferAggregator;
 import io.druid.query.monomorphicprocessing.RuntimeShapeInspector;
-import io.druid.segment.ColumnValueSelector;
 import io.druid.segment.ObjectColumnSelector;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;

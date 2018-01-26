@@ -29,7 +29,6 @@ import com.google.common.base.Preconditions;
 import com.google.common.primitives.Doubles;
 
 import io.druid.query.aggregation.AggregatorFactory;
-import io.druid.query.aggregation.AggregatorUtil;
 import io.druid.query.aggregation.PostAggregator;
 import io.druid.query.cache.CacheKeyBuilder;
 

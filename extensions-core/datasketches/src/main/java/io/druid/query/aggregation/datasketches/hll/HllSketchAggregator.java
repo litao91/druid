@@ -1,3 +1,5 @@
+/*
+ */
 package io.druid.query.aggregation.datasketches.hll;
 
 import com.yahoo.sketches.hll.Union;

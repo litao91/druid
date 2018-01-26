@@ -1,7 +1,8 @@
+/*
+ */
 package io.druid.query.aggregation.datasketches.hll;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.jaxrs.json.annotation.JSONP;
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
 import com.yahoo.sketches.hll.Union;
