@@ -36,14 +36,12 @@ import org.junit.Test;
 
 import java.nio.ByteBuffer;
 
-public class BufferGrouperUsingSketchMergeAggregatorFactoryTest
-{
+public class BufferGrouperUsingSketchMergeAggregatorFactoryTest {
   private static BufferGrouper<Integer> makeGrouper(
       TestColumnSelectorFactory columnSelectorFactory,
       int bufferSize,
       int initialBuckets
-  )
-  {
+  ) {
     final BufferGrouper<Integer> grouper = new BufferGrouper<>(
         Suppliers.ofInstance(ByteBuffer.allocate(bufferSize)),
         GrouperTestUtil.intKeySerde(),
@@ -61,14 +59,13 @@ public class BufferGrouperUsingSketchMergeAggregatorFactoryTest
   }
 
   @Test
-  public void testGrowingBufferGrouper()
-  {
+  public void testGrowingBufferGrouper() {
     final TestColumnSelectorFactory columnSelectorFactory = GrouperTestUtil.newColumnSelectorFactory();
     final Grouper<Integer> grouper = makeGrouper(columnSelectorFactory, 100000, 2);
     try {
       final int expectedMaxSize = 5;
 
-      SketchHolder sketchHolder = SketchHolder.of(Sketches.updateSketchBuilder().build(16));
+      SketchHolder sketchHolder = SketchHolder.of(Sketches.updateSketchBuilder().setNominalEntries(16).build());
       UpdateSketch updateSketch = (UpdateSketch) sketchHolder.getSketch();
       updateSketch.update(1);
 
@@ -88,8 +85,7 @@ public class BufferGrouperUsingSketchMergeAggregatorFactoryTest
       Object[] holders = Lists.newArrayList(grouper.iterator(true)).get(0).getValues();
 
       Assert.assertEquals(2.0d, ((SketchHolder) holders[0]).getEstimate(), 0);
-    }
-    finally {
+    } finally {
       grouper.close();
     }
   }
