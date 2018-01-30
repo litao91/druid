@@ -20,13 +20,32 @@ package io.druid.query.aggregation.datasketches.hll;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.google.common.base.Preconditions;
+import com.google.common.primitives.Ints;
+import com.yahoo.sketches.hll.Union;
+import io.druid.java.util.common.StringUtils;
+import io.druid.query.aggregation.Aggregator;
 import io.druid.query.aggregation.AggregatorFactory;
+import io.druid.query.aggregation.BufferAggregator;
+import io.druid.segment.ColumnSelectorFactory;
+import io.druid.segment.ObjectColumnSelector;
 
+import java.nio.ByteBuffer;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
-public class HllSketchMergeAggregatorFactory extends HllSketchAggregatorFactory {
+/**
+ * Represets columne aggregation
+ */
+public class HllSketchMergeAggregatorFactory extends AggregatorFactory {
   private static final byte HLL_SKETCH_CACHE_TYPE_ID = 0x21;
+  public static final int DEFAULT_MAX_LGK = 21;
+
+  protected final String name;
+  protected final String fieldName;
+  protected final int lgk;
+  private final byte cacheId;
 
   private final boolean isInputHllSketch;
 
@@ -37,8 +56,12 @@ public class HllSketchMergeAggregatorFactory extends HllSketchAggregatorFactory 
       @JsonProperty("lgk") Integer lgk,
       @JsonProperty("isInputHllSketch") Boolean isInputHllSketch
   ) {
-    super(name, fieldName, lgk, HLL_SKETCH_CACHE_TYPE_ID);
+    this.name = Preconditions.checkNotNull(name, "Must have a valid, non-null aggregator name");
+    this.fieldName = Preconditions.checkNotNull(fieldName, "Must have a valid, non-null fieldName");
+
+    this.lgk = lgk == null ? DEFAULT_MAX_LGK : lgk;
     this.isInputHllSketch = isInputHllSketch.booleanValue();
+    this.cacheId = HLL_SKETCH_CACHE_TYPE_ID;
   }
 
   @Override
@@ -59,6 +82,7 @@ public class HllSketchMergeAggregatorFactory extends HllSketchAggregatorFactory 
 
   @Override
   public String getTypeName() {
+    // Depending on the input type, we use different sedrd strategy
     if (isInputHllSketch) {
       return HllSketchModule.HLL_SKETCH_MERGE_AGG;
     } else {
@@ -99,5 +123,77 @@ public class HllSketchMergeAggregatorFactory extends HllSketchAggregatorFactory 
         + ", lgk=" + lgk
         + ", isInputHllSketch=" + isInputHllSketch
         + "}";
+  }
+
+  @Override
+  public Aggregator factorize(ColumnSelectorFactory metricFactory) {
+    ObjectColumnSelector selector = metricFactory.makeObjectColumnSelector(fieldName);
+    if (selector == null) {
+      // this will return a empty HllSketchHolder with
+      return new EmptyHllSketchAggregator();
+    } else {
+      return new HllSketchAggregator(selector, lgk);
+    }
+  }
+
+  @Override
+  public BufferAggregator factorizeBuffered(ColumnSelectorFactory metricFactory) {
+    ObjectColumnSelector selector = metricFactory.makeObjectColumnSelector(fieldName);
+    if (selector == null) {
+      return EmptyHllSketchBufferAggregator.instance();
+    } else {
+      return new HllSketchBufferAggregator(selector, lgk, getMaxIntermediateSize());
+    }
+  }
+
+  @Override
+  public Comparator getComparator() {
+    return HllSketchHolder.COMPARATOR;
+  }
+
+  @Override
+  public Object combine(Object lhs, Object rhs) {
+    return HllSketchHolder.combine(lhs, rhs, lgk);
+  }
+
+  @Override
+  public Object deserialize(Object object) {
+    return HllSketchHolder.deserialize(object);
+  }
+
+  @Override
+  @JsonProperty
+  public String getName() {
+    return name;
+  }
+
+  @JsonProperty
+  public String getFieldName() {
+    return fieldName;
+  }
+
+  @JsonProperty
+  public int getLgk() {
+    return lgk;
+  }
+
+  @Override
+  public List<String> requiredFields() {
+    return Collections.singletonList(fieldName);
+  }
+
+  @Override
+  public int getMaxIntermediateSize() {
+    return Union.getMaxSerializationBytes(lgk);
+  }
+
+  @Override
+  public byte[] getCacheKey() {
+    byte[] fieldNameBytes = StringUtils.toUtf8(fieldName);
+    return ByteBuffer.allocate(1 + Ints.BYTES + fieldNameBytes.length)
+        .put(cacheId)
+        .putInt(lgk)
+        .put(fieldNameBytes)
+        .array();
   }
 }
