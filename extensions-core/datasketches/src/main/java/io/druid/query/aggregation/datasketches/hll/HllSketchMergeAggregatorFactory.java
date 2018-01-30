@@ -88,7 +88,7 @@ public class HllSketchMergeAggregatorFactory extends AggregatorFactory {
 
   @Override
   public String getTypeName() {
-    return HllSketchModule.HLL_SKETCH;
+    return HllSketchModule.HLL_SKETCH_BUILD_AGG;
   }
 
   @Override

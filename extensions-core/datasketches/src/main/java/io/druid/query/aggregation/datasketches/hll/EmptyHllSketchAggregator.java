@@ -19,7 +19,6 @@
 package io.druid.query.aggregation.datasketches.hll;
 
 import com.yahoo.sketches.hll.HllSketch;
-import com.yahoo.sketches.hll.Union;
 import io.druid.query.aggregation.Aggregator;
 
 public class EmptyHllSketchAggregator implements Aggregator {

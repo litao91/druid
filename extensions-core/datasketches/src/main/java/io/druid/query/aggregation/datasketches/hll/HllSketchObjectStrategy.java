@@ -34,10 +34,17 @@ public class HllSketchObjectStrategy implements ObjectStrategy {
     return Object.class;
   }
 
+  /**
+   * Convert from underlying bytebuffer to HllSketchHolder
+   *
+   * @param buffer buffer to read value from
+   * @param numBytes number of bytes used to store the value, starting at buffer.position()
+   * @return
+   */
   @Override
   public Object fromByteBuffer(ByteBuffer buffer, int numBytes) {
     if (numBytes == 0) {
-      return HllSketchHolder.EMPTY;
+      return HllSketchHolder.of(new HllSketch(21));
     }
     return HllSketchHolder.of(Memory.wrap(buffer).region(buffer.position(), numBytes));
   }
