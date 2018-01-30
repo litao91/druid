@@ -40,11 +40,6 @@ public class HllSketchHolder {
   private volatile HllSketch cachedSketch = null;
   private volatile Double cachedEstimate = null;
 
-  /**
-   * Create a union that use max possible lgMaxK to preserve accuracy
-   */
-  public static final HllSketchHolder EMPTY = HllSketchHolder.of(new Union(21));
-
   private HllSketchHolder(Object obj) {
     Preconditions.checkArgument(obj instanceof HllSketch || obj instanceof Memory || obj instanceof Union,
         "Unkonwn HLL sketch representation type [%s]", obj.getClass().getName());
@@ -117,6 +112,10 @@ public class HllSketchHolder {
     return cachedSketch;
   }
 
+  /**
+   * Get the estimated cardinality from the current sketch
+   * @return
+   */
   public double getEstimate() {
     if (cachedEstimate == null) {
       cachedEstimate = getHllSketch().getEstimate();
@@ -125,7 +124,7 @@ public class HllSketchHolder {
   }
 
   /**
-   * Union the given two holders
+   * Combine two Holders (usually from Aggregator#get or BufferedAggregator#get), basically the union of two sketches
    *
    * @param o1
    * @param o2
@@ -135,9 +134,12 @@ public class HllSketchHolder {
   public static HllSketchHolder combine(Object o1, Object o2, int lgK) {
     HllSketchHolder holder1 = (HllSketchHolder) o1;
     HllSketchHolder holder2 = (HllSketchHolder) o2;
+    // If one of them are union, merge the other side into the union
+    // Otherwise we create a new Union and update it with the sketches.
     if (holder1.obj instanceof Union) {
       Union union = (Union) holder1.obj;
       holder2.updateUnion(union);
+      // the obj of holder1 has ben updated thus the cache is no longer valid
       holder1.invalidateCache();
       return holder1;
     } else if (holder2.obj instanceof Union) {
@@ -158,6 +160,12 @@ public class HllSketchHolder {
     cachedSketch = null;
   }
 
+  /**
+   * Generally used to deserialize the data from JSON
+   *
+   * @param serializedSketch
+   * @return
+   */
   public static HllSketchHolder deserialize(Object serializedSketch) {
     if (serializedSketch instanceof String) {
       return HllSketchHolder.of(deserializeFromBase64EncodedString((String) serializedSketch));

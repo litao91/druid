@@ -18,15 +18,17 @@
  */
 package io.druid.query.aggregation.datasketches.hll;
 
+import com.yahoo.sketches.hll.HllSketch;
+import com.yahoo.sketches.hll.Union;
 import io.druid.query.aggregation.BufferAggregator;
 
 import java.nio.ByteBuffer;
 
 public class EmptyHllSketchBufferAggregator implements BufferAggregator {
-  private static final EmptyHllSketchBufferAggregator INSTANCE = new EmptyHllSketchBufferAggregator();
+  private final int lgk;
+  public EmptyHllSketchBufferAggregator(int lgk) {
+    this.lgk = lgk;
 
-  public static EmptyHllSketchBufferAggregator instance() {
-    return INSTANCE;
   }
 
   @Override
@@ -40,7 +42,7 @@ public class EmptyHllSketchBufferAggregator implements BufferAggregator {
 
   @Override
   public Object get(ByteBuffer buf, int position) {
-    return HllSketchHolder.EMPTY;
+    return HllSketchHolder.of(new HllSketch(lgk));
   }
 
   @Override

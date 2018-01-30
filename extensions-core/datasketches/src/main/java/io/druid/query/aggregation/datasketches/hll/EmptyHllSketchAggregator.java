@@ -18,9 +18,16 @@
  */
 package io.druid.query.aggregation.datasketches.hll;
 
+import com.yahoo.sketches.hll.HllSketch;
+import com.yahoo.sketches.hll.Union;
 import io.druid.query.aggregation.Aggregator;
 
 public class EmptyHllSketchAggregator implements Aggregator {
+  private final int lgk;
+  public EmptyHllSketchAggregator(int lgk) {
+    this.lgk = lgk;
+  }
+
   @Override
   public void aggregate() {
 
@@ -31,9 +38,14 @@ public class EmptyHllSketchAggregator implements Aggregator {
 
   }
 
+  /**
+   * For initialization, we create a new empty union
+   * @return a empty union
+   */
   @Override
   public Object get() {
-    return HllSketchHolder.EMPTY;
+    // for initialization, we create a new HllSketch with max accuracy possible
+    return HllSketchHolder.of(new HllSketch(lgk));
 
   }
 

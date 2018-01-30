@@ -19,6 +19,7 @@
 package io.druid.query.aggregation.datasketches.hll;
 
 import com.yahoo.memory.WritableMemory;
+import com.yahoo.sketches.hll.HllSketch;
 import com.yahoo.sketches.hll.Union;
 import io.druid.query.aggregation.BufferAggregator;
 import io.druid.query.monomorphicprocessing.RuntimeShapeInspector;
@@ -31,7 +32,7 @@ import java.util.IdentityHashMap;
 
 public class HllSketchBufferAggregator implements BufferAggregator {
   private final ObjectColumnSelector selector;
-  private final int lgK;
+  private final int lgk;
   private final int maxIntermediateSize;
 
   /**
@@ -46,17 +47,20 @@ public class HllSketchBufferAggregator implements BufferAggregator {
 
   public HllSketchBufferAggregator(ObjectColumnSelector selector, int lgK, int maxIntermediateSize) {
     this.selector = selector;
-    this.lgK = lgK;
+    this.lgk = lgK;
     this.maxIntermediateSize = maxIntermediateSize;
   }
 
 
   /**
+   * Initialize the buffer in the given location.
+   *
    * @param buf      byte buffer to initialize
    * @param position offset within the byte buffer for initialization
    */
   @Override
   public void init(ByteBuffer buf, int position) {
+    // at the time of initialization, the memory is not wrapped.
     createNewUnion(buf, position, false);
   }
 
@@ -80,13 +84,17 @@ public class HllSketchBufferAggregator implements BufferAggregator {
   private Union createNewUnion(ByteBuffer buf, int position, boolean wrapped) {
     // the region to be written to
     WritableMemory mem = getMemory(buf).writableRegion(position, maxIntermediateSize);
-    Union union = wrapped ? Union.writableWrap(mem) : new Union(lgK, mem);
+    // if it's wrapped, we use the image, otherwise we create a new union on top of it.
+    Union union = wrapped ? Union.writableWrap(mem) : new Union(lgk, mem);
+
+    // Cache the buffer
     Int2ObjectMap<Union> unionMap = unions.get(buf);
     // if the buf is not in the map
     if (unionMap == null) {
       unionMap = new Int2ObjectOpenHashMap<>();
       unions.put(buf, unionMap);
     }
+    // map the object to the concrete object
     unionMap.put(position, union);
     return union;
   }
@@ -100,6 +108,13 @@ public class HllSketchBufferAggregator implements BufferAggregator {
     return mem;
   }
 
+  /**
+   * Get the union in the given position, update it (since the memory is wrapped, it will automatically update
+   * the underlying ByteBuffer
+   *
+   * @param buf byte buffer storing the byte array representation of the aggregate
+   * @param position offset within the byte buffer at which the current aggregate value is stored
+   */
   @Override
   public void aggregate(ByteBuffer buf, int position) {
     Object update = selector.get();
@@ -116,7 +131,7 @@ public class HllSketchBufferAggregator implements BufferAggregator {
     Int2ObjectMap<Union> unionMap = unions.get(buf);
     Union union = unionMap != null ? unionMap.get(position) : null;
     if (union == null) {
-      return HllSketchHolder.EMPTY;
+      return HllSketchHolder.of(new HllSketch(lgk));
     }
     return HllSketchHolder.of(union.getResult());
   }
@@ -142,6 +157,15 @@ public class HllSketchBufferAggregator implements BufferAggregator {
     inspector.visit("selector", selector);
   }
 
+  /**
+   * This method tells the BufferAggregator that the cached object at a certain location has been located to a different
+   * location
+   *
+   * @param oldPosition old position of a cached object before aggregation buffer relocates to a new ByteBuffer.
+   * @param newPosition new position of a cached object after aggregation buffer relocates to a new ByteBuffer.
+   * @param oldBuffer old aggregation buffer.
+   * @param newBuffer new aggregation buffer.
+   */
   @Override
   public void relocate(int oldPosition, int newPosition, ByteBuffer oldBuffer, ByteBuffer newBuffer) {
     createNewUnion(newBuffer, newPosition, true);

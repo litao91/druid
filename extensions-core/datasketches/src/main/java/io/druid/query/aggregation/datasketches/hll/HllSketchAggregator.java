@@ -18,6 +18,7 @@
  */
 package io.druid.query.aggregation.datasketches.hll;
 
+import com.yahoo.sketches.hll.HllSketch;
 import com.yahoo.sketches.hll.Union;
 import io.druid.java.util.common.ISE;
 import io.druid.query.aggregation.Aggregator;
@@ -30,15 +31,22 @@ public class HllSketchAggregator implements Aggregator {
   private final int lgk;
   private Union union;
 
+  /**
+   * Combine the current column value to the united representation. In this case, a HllSketch Union
+   */
   @Override
   public void aggregate() {
     Object update = selector.get();
+    // if the input is null, nothing to do
     if (update == null) {
       return;
     }
+    // if the aggregator is null, create a new one
     if (union == null) {
       initUnion();
     }
+
+    // the real aggregate logic
     updateUnion(union, update);
   }
 
@@ -59,7 +67,7 @@ public class HllSketchAggregator implements Aggregator {
   @Override
   public Object get() {
     if (union == null) {
-      return new Union(lgk);
+      return HllSketchHolder.of(new HllSketch(lgk));
     }
     return HllSketchHolder.of(union.getResult());
   }
@@ -79,6 +87,12 @@ public class HllSketchAggregator implements Aggregator {
     throw new UnsupportedOperationException("Not implemented");
   }
 
+  /**
+   * Update the given value into the hll sketch union
+   *
+   * @param union
+   * @param update
+   */
   static void updateUnion(Union union, Object update) {
     if (update instanceof HllSketchHolder) {
       ((HllSketchHolder) update).updateUnion(union);

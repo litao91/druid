@@ -64,6 +64,12 @@ public class HllSketchMergeAggregatorFactory extends AggregatorFactory {
     this.cacheId = HLL_SKETCH_CACHE_TYPE_ID;
   }
 
+  /**
+   * Create factory for combining get output of HllSketchMergeAggregatorFactory
+   * Since we don't alternate the type, the same factory is used. (HllSketchHolder)
+   *
+   * @return
+   */
   @Override
   public AggregatorFactory getCombiningFactory() {
     return new HllSketchMergeAggregatorFactory(name, fieldName, lgk, false);
@@ -82,12 +88,7 @@ public class HllSketchMergeAggregatorFactory extends AggregatorFactory {
 
   @Override
   public String getTypeName() {
-    // Depending on the input type, we use different sedrd strategy
-    if (isInputHllSketch) {
-      return HllSketchModule.HLL_SKETCH_MERGE_AGG;
-    } else {
-      return HllSketchModule.HLL_SKETCH_BUILD_AGG;
-    }
+    return HllSketchModule.HLL_SKETCH;
   }
 
   @Override
@@ -117,7 +118,7 @@ public class HllSketchMergeAggregatorFactory extends AggregatorFactory {
 
   @Override
   public String toString() {
-    return "SketchMergeAggregatorFactory{"
+    return "HllSketchMergeAggregatorFactory{"
         + "fieldName=" + fieldName
         + ", name=" + name
         + ", lgk=" + lgk
@@ -130,7 +131,7 @@ public class HllSketchMergeAggregatorFactory extends AggregatorFactory {
     ObjectColumnSelector selector = metricFactory.makeObjectColumnSelector(fieldName);
     if (selector == null) {
       // this will return a empty HllSketchHolder with
-      return new EmptyHllSketchAggregator();
+      return new EmptyHllSketchAggregator(lgk);
     } else {
       return new HllSketchAggregator(selector, lgk);
     }
@@ -140,7 +141,7 @@ public class HllSketchMergeAggregatorFactory extends AggregatorFactory {
   public BufferAggregator factorizeBuffered(ColumnSelectorFactory metricFactory) {
     ObjectColumnSelector selector = metricFactory.makeObjectColumnSelector(fieldName);
     if (selector == null) {
-      return EmptyHllSketchBufferAggregator.instance();
+      return new EmptyHllSketchBufferAggregator(lgk);
     } else {
       return new HllSketchBufferAggregator(selector, lgk, getMaxIntermediateSize());
     }
@@ -151,11 +152,28 @@ public class HllSketchMergeAggregatorFactory extends AggregatorFactory {
     return HllSketchHolder.COMPARATOR;
   }
 
+  /**
+   * Combine the output from HllAggregator#get or HllBufferedAggregator#get
+   * They should of type HllSketchHolder. The real instance type could be
+   * Union or HllSketch
+   *
+   * @param lhs The left hand side of the combine
+   * @param rhs The right hand side of the combine
+   *
+   * @return
+   */
   @Override
   public Object combine(Object lhs, Object rhs) {
     return HllSketchHolder.combine(lhs, rhs, lgk);
   }
 
+  /**
+   * Deserialize the data from json
+   *
+   * @param object the object to deserialize
+   *
+   * @return
+   */
   @Override
   public Object deserialize(Object object) {
     return HllSketchHolder.deserialize(object);
@@ -182,6 +200,9 @@ public class HllSketchMergeAggregatorFactory extends AggregatorFactory {
     return Collections.singletonList(fieldName);
   }
 
+  /**
+   * Returns the maximum size in bytes that this union operator can grow to given a lgK.
+   */
   @Override
   public int getMaxIntermediateSize() {
     return Union.getMaxSerializationBytes(lgk);
