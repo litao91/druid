@@ -20,33 +20,42 @@
 package io.druid.query.aggregation.datasketches.hll;
 
 import com.google.common.collect.Lists;
+import com.google.common.io.Files;
+import io.druid.data.input.Row;
+import io.druid.java.util.common.granularity.Granularities;
+import io.druid.java.util.common.guava.Sequence;
+import io.druid.java.util.common.guava.Sequences;
 import io.druid.query.aggregation.AggregationTestHelper;
 import io.druid.query.groupby.GroupByQueryConfig;
 import io.druid.query.groupby.GroupByQueryRunnerTest;
+import org.junit.Assert;
 import org.junit.Rule;
+import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
+import java.io.File;
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.util.Collection;
 import java.util.List;
 
 @RunWith(Parameterized.class)
-public class HllSketchAggregatorTest {
+public class HllSketchAggregationTest {
   private final AggregationTestHelper helper;
 
   @Rule
   public final TemporaryFolder tempFolder = new TemporaryFolder();
 
-  public HllSketchAggregatorTest(final GroupByQueryConfig config) {
+  public HllSketchAggregationTest(final GroupByQueryConfig config) {
     HllSketchModule m = new HllSketchModule();
     m.configure(null);
     helper = AggregationTestHelper.createGroupByQueryAggregationTestHelper(m.getJacksonModules(), config, tempFolder);
   }
 
   @Parameterized.Parameters(name = "{0}")
-  public static Collection<?> constructorFeeder() throws IOException {
+  public static Collection<?> constructorFeeder() {
     final List<Object[]> constructors = Lists.newArrayList();
     for (GroupByQueryConfig config : GroupByQueryRunnerTest.testConfigs()) {
       constructors.add(new Object[]{config});
@@ -54,5 +63,30 @@ public class HllSketchAggregatorTest {
     return constructors;
   }
 
+  @Test
+  public void testHllCardinalityOnSimpleColumn() throws Exception {
+    Sequence<Row> seq = helper.createIndexAndRunQueryOnSegment(
+        new File(HllSketchAggregationTest.class.getClassLoader().getResource("simple_test_data.tsv").getFile()),
+        readFileFromClasspathAsString("simple_test_data_record_parser2.json"),
+        "["
+            + "  {"
+            + "    \"type\": \"count\","
+            + "    \"name\": \"count\""
+            + "  }"
+            + "]",
+        0,
+        Granularities.NONE,
+        1000,
+        readFileFromClasspathAsString("hll/simple_test_data_group_by_query.json")
+    );
+    List<Row> results = Sequences.toList(seq, Lists.newArrayList());
+    Assert.assertEquals(5, results.size());
+  }
 
+  public final static String readFileFromClasspathAsString(String fileName) throws IOException {
+    return Files.asCharSource(
+        new File(HllSketchAggregationTest.class.getClassLoader().getResource(fileName).getFile()),
+        Charset.forName("UTF-8")
+    ).read();
+  }
 }

@@ -60,7 +60,7 @@ public class HllSketchMergeAggregatorFactory extends AggregatorFactory {
     this.fieldName = Preconditions.checkNotNull(fieldName, "Must have a valid, non-null fieldName");
 
     this.lgk = lgk == null ? DEFAULT_MAX_LGK : lgk;
-    this.isInputHllSketch = isInputHllSketch.booleanValue();
+    this.isInputHllSketch = isInputHllSketch == null ? false : isInputHllSketch.booleanValue();
     this.cacheId = HLL_SKETCH_CACHE_TYPE_ID;
   }
 
