@@ -19,8 +19,11 @@
 
 package io.druid.query.aggregation.datasketches.hll;
 
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.io.Files;
+import io.druid.data.input.MapBasedRow;
 import io.druid.data.input.Row;
 import io.druid.java.util.common.granularity.Granularities;
 import io.druid.java.util.common.guava.Sequence;
@@ -28,6 +31,7 @@ import io.druid.java.util.common.guava.Sequences;
 import io.druid.query.aggregation.AggregationTestHelper;
 import io.druid.query.groupby.GroupByQueryConfig;
 import io.druid.query.groupby.GroupByQueryRunnerTest;
+import org.joda.time.DateTime;
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
@@ -82,6 +86,61 @@ public class HllSketchAggregationTest {
 
     List<Row> results = Sequences.toList(seq, Lists.<Row>newArrayList());
     Assert.assertEquals(5, results.size());
+    Assert.assertEquals(
+        ImmutableList.of(
+            new MapBasedRow(
+                DateTime.parse("2014-10-19T00:00:00.000Z"),
+                ImmutableMap
+                    .<String, Object>builder()
+                    .put("product", "product_3")
+                    .put("hll_sketch_count", 38.00000349183915)
+                    .put("hllSketchEstimatePostAgg", 38.00000349183915)
+                    .put("non_existing_col_validation", 0.0)
+                    .build()
+            ),
+            new MapBasedRow(
+                DateTime.parse("2014-10-19T00:00:00.000Z"),
+                ImmutableMap
+                    .<String, Object>builder()
+                    .put("product", "product_1")
+                    .put("hll_sketch_count", 42.00000427663378)
+                    .put("hllSketchEstimatePostAgg", 42.00000427663378)
+                    .put("non_existing_col_validation", 0.0)
+                    .build()
+            ),
+            new MapBasedRow(
+                DateTime.parse("2014-10-19T00:00:00.000Z"),
+                ImmutableMap
+                    .<String, Object>builder()
+                    .put("product", "product_2")
+                    .put("hll_sketch_count", 42.00000427663378)
+                    .put("hllSketchEstimatePostAgg", 42.00000427663378)
+                    .put("non_existing_col_validation", 0.0)
+                    .build()
+            ),
+            new MapBasedRow(
+                DateTime.parse("2014-10-19T00:00:00.000Z"),
+                ImmutableMap
+                    .<String, Object>builder()
+                    .put("product", "product_4")
+                    .put("hll_sketch_count", 42.00000427663378)
+                    .put("hllSketchEstimatePostAgg", 42.00000427663378)
+                    .put("non_existing_col_validation", 0.0)
+                    .build()
+            ),
+            new MapBasedRow(
+                DateTime.parse("2014-10-19T00:00:00.000Z"),
+                ImmutableMap
+                    .<String, Object>builder()
+                    .put("product", "product_5")
+                    .put("hll_sketch_count", 42.00000427663378)
+                    .put("hllSketchEstimatePostAgg", 42.00000427663378)
+                    .put("non_existing_col_validation", 0.0)
+                    .build()
+            )
+      ),
+      results
+    );
   }
 
   public final static String readFileFromClasspathAsString(String fileName) throws IOException {
