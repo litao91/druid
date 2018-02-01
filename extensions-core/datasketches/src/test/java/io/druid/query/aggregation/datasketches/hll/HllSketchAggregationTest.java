@@ -68,6 +68,21 @@ public class HllSketchAggregationTest {
   }
 
   @Test
+  public void testHllSketchDataIngestAndGroupBy() throws Exception {
+    Sequence<Row> seq = helper.createIndexAndRunQueryOnSegment(
+        new File(HllSketchAggregationTest.class.getClassLoader().getResource("simple_test_data.tsv").getFile()),
+        readFileFromClasspathAsString("simple_test_data_record_parser.json"),
+        readFileFromClasspathAsString("hll/hll_sketch_simple_test_data_aggregators.json"),
+        0,
+        Granularities.NONE,
+        1000,
+        readFileFromClasspathAsString("hll/simple_test_data_group_by_query.json")
+    );
+    List<Row> results = Sequences.toList(seq, Lists.newArrayList());
+    Assert.assertEquals(5, results.size());
+  }
+
+  @Test
   public void testHllCardinalityOnSimpleColumn() throws Exception {
     Sequence<Row> seq = helper.createIndexAndRunQueryOnSegment(
         new File(HllSketchAggregationTest.class.getClassLoader().getResource("simple_test_data.tsv").getFile()),

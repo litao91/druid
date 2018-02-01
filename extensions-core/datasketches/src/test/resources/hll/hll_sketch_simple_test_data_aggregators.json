@@ -1,0 +1,14 @@
+[
+    {
+        "type": "hllSketch",
+        "name": "pty_country_hll",
+        "fieldName": "pty_country",
+        "lgk": 15
+    },
+    {
+        "type": "hllSketch",
+        "name": "non_existing_col_validation",
+        "fieldName": "non_existing_col",
+        "lgk": 15
+    }
+]

@@ -1,0 +1,33 @@
+{
+  "queryType": "groupBy",
+  "dataSource": "test_datasource",
+  "granularity": "ALL",
+  "dimensions": [],
+  "aggregations": [
+    {
+      "type": "hllSketch",
+      "name": "hll_sketch_count",
+      "fieldName": "pty_country_hll",
+      "lgk": 15
+    },
+    {
+      "type": "hllSkeetch",
+      "name": "non_existing_col_validation",
+      "fieldName": "non_existing_col",
+      "lgk": 15
+    }
+  ],
+  "postAggregations": [
+    {
+      "type": "hllSketchEstimate",
+      "name": "hllEstimatePostAgg",
+      "field": {
+        "type": "fieldAccess",
+        "fieldName": "hll_sketch_count"
+      }
+    }
+  ],
+  "intervals": [
+    "2014-10-19T00:00:00.000Z/2014-10-22T00:00:00.000Z"
+  ]
+}
