@@ -7,7 +7,7 @@
     {
       "type": "hllSketch",
       "name": "hll_sketch_count",
-      "fieldName": "pty_country",
+      "fieldName": "pty_country_hll",
       "lgk": 15
     },
     {

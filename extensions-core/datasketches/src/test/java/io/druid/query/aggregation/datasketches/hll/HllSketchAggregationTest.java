@@ -80,6 +80,61 @@ public class HllSketchAggregationTest {
     );
     List<Row> results = Sequences.toList(seq, Lists.newArrayList());
     Assert.assertEquals(5, results.size());
+    Assert.assertEquals(
+        ImmutableList.of(
+            new MapBasedRow(
+                DateTime.parse("2014-10-19T00:00:00.000Z"),
+                ImmutableMap
+                    .<String, Object>builder()
+                    .put("product", "product_3")
+                    .put("hll_sketch_count", 38.00000349183915)
+                    .put("hllSketchEstimatePostAgg", 38.00000349183915)
+                    .put("non_existing_col_validation", 0.0)
+                    .build()
+            ),
+            new MapBasedRow(
+                DateTime.parse("2014-10-19T00:00:00.000Z"),
+                ImmutableMap
+                    .<String, Object>builder()
+                    .put("product", "product_1")
+                    .put("hll_sketch_count", 42.00000427663378)
+                    .put("hllSketchEstimatePostAgg", 42.00000427663378)
+                    .put("non_existing_col_validation", 0.0)
+                    .build()
+            ),
+            new MapBasedRow(
+                DateTime.parse("2014-10-19T00:00:00.000Z"),
+                ImmutableMap
+                    .<String, Object>builder()
+                    .put("product", "product_2")
+                    .put("hll_sketch_count", 42.00000427663378)
+                    .put("hllSketchEstimatePostAgg", 42.00000427663378)
+                    .put("non_existing_col_validation", 0.0)
+                    .build()
+            ),
+            new MapBasedRow(
+                DateTime.parse("2014-10-19T00:00:00.000Z"),
+                ImmutableMap
+                    .<String, Object>builder()
+                    .put("product", "product_4")
+                    .put("hll_sketch_count", 42.00000427663378)
+                    .put("hllSketchEstimatePostAgg", 42.00000427663378)
+                    .put("non_existing_col_validation", 0.0)
+                    .build()
+            ),
+            new MapBasedRow(
+                DateTime.parse("2014-10-19T00:00:00.000Z"),
+                ImmutableMap
+                    .<String, Object>builder()
+                    .put("product", "product_5")
+                    .put("hll_sketch_count", 42.00000427663378)
+                    .put("hllSketchEstimatePostAgg", 42.00000427663378)
+                    .put("non_existing_col_validation", 0.0)
+                    .build()
+            )
+        ),
+        results
+    );
   }
 
   @Test
