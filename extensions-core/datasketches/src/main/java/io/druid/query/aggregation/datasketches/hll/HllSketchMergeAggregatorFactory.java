@@ -72,7 +72,7 @@ public class HllSketchMergeAggregatorFactory extends AggregatorFactory {
    */
   @Override
   public AggregatorFactory getCombiningFactory() {
-    return new HllSketchMergeAggregatorFactory(name, fieldName, lgk, false);
+    return new HllSketchMergeAggregatorFactory(name, name, lgk, false);
   }
 
   @Override

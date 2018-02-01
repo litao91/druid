@@ -79,7 +79,8 @@ public class HllSketchAggregationTest {
         1000,
         readFileFromClasspathAsString("hll/simple_test_data_group_by_query.json")
     );
-    List<Row> results = Sequences.toList(seq, Lists.newArrayList());
+
+    List<Row> results = Sequences.toList(seq, Lists.<Row>newArrayList());
     Assert.assertEquals(5, results.size());
   }
 
