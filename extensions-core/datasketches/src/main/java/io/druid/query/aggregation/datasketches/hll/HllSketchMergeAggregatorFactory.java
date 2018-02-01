@@ -93,18 +93,30 @@ public class HllSketchMergeAggregatorFactory extends AggregatorFactory {
 
   @Override
   public boolean equals(Object o) {
-
     if (this == o) {
       return true;
     }
     if (o == null || getClass() != o.getClass()) {
       return false;
     }
-    if (!super.equals(o)) {
+
+    HllSketchMergeAggregatorFactory that = (HllSketchMergeAggregatorFactory) o;
+
+    if (lgk != that.lgk) {
       return false;
     }
 
-    HllSketchMergeAggregatorFactory that = (HllSketchMergeAggregatorFactory) o;
+    if (cacheId != that.cacheId) {
+      return false;
+    }
+
+    if (!name.equals(that.name)) {
+      return false;
+    }
+
+    if (!fieldName.equals(that.fieldName)) {
+      return false;
+    }
 
     return isInputHllSketch == that.isInputHllSketch;
   }
@@ -193,6 +205,11 @@ public class HllSketchMergeAggregatorFactory extends AggregatorFactory {
   @JsonProperty
   public int getLgk() {
     return lgk;
+  }
+
+  @JsonProperty
+  public boolean getIsInputHllSketch() {
+    return isInputHllSketch;
   }
 
   @Override

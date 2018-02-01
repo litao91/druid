@@ -29,6 +29,7 @@ import io.druid.java.util.common.granularity.Granularities;
 import io.druid.java.util.common.guava.Sequence;
 import io.druid.java.util.common.guava.Sequences;
 import io.druid.query.aggregation.AggregationTestHelper;
+import io.druid.query.aggregation.AggregatorFactory;
 import io.druid.query.groupby.GroupByQueryConfig;
 import io.druid.query.groupby.GroupByQueryRunnerTest;
 import org.joda.time.DateTime;
@@ -211,6 +212,26 @@ public class HllSketchAggregationTest {
       ),
       results
     );
+  }
+
+  private void assertAggregatorFactorySerde(AggregatorFactory agg) throws Exception {
+    Assert.assertEquals(
+        agg,
+        helper.getObjectMapper().readValue(
+            helper.getObjectMapper().writeValueAsString(agg),
+            AggregatorFactory.class
+        )
+    );
+  }
+
+  @Test
+  public void testHllSketchMergeAggregatorySerde() throws Exception {
+    assertAggregatorFactorySerde(new HllSketchMergeAggregatorFactory(
+        "name", "fieldName", 16, null));
+    assertAggregatorFactorySerde(new HllSketchMergeAggregatorFactory(
+        "name", "fieldName", 16, false));
+    assertAggregatorFactorySerde(new HllSketchMergeAggregatorFactory(
+        "name", "fieldName", 16, true));
   }
 
   public final static String readFileFromClasspathAsString(String fileName) throws IOException {
