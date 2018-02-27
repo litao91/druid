@@ -47,6 +47,7 @@ import io.druid.timeline.partition.PartitionChunk;
 import org.joda.time.DateTime;
 import org.joda.time.Duration;
 import org.joda.time.Interval;
+import org.joda.time.format.DateTimeFormat;
 import org.skife.jdbi.v2.BaseResultSetMapper;
 import org.skife.jdbi.v2.Batch;
 import org.skife.jdbi.v2.FoldController;
@@ -63,11 +64,7 @@ import org.skife.jdbi.v2.util.ByteArrayMapper;
 import java.io.IOException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -93,6 +90,9 @@ public class SQLMetadataSegmentManager implements MetadataSegmentManager
   private volatile ListenableFuture<?> future = null;
 
   private volatile boolean started = false;
+
+  private String lastVersion = null;
+  private static int pollPageSize = 10000;
 
   @Inject
   public SQLMetadataSegmentManager(
@@ -442,59 +442,74 @@ public class SQLMetadataSegmentManager implements MetadataSegmentManager
         return;
       }
 
-      ConcurrentHashMap<String, DruidDataSource> newDataSources = new ConcurrentHashMap<String, DruidDataSource>();
+      ConcurrentHashMap<String, DruidDataSource> newDataSources = new ConcurrentHashMap<>();
 
       log.debug("Starting polling of segment table");
+      HashSet<DataSegment> newSegments = new HashSet<>();
 
-      // some databases such as PostgreSQL require auto-commit turned off
-      // to stream results back, enabling transactions disables auto-commit
-      //
-      // setting connection to read-only will allow some database such as MySQL
-      // to automatically use read-only transaction mode, further optimizing the query
-      final List<DataSegment> segments = connector.inReadOnlyTransaction(
-          new TransactionCallback<List<DataSegment>>()
-          {
-            @Override
-            public List<DataSegment> inTransaction(Handle handle, TransactionStatus status) throws Exception
-            {
-              return handle
-                  .createQuery(String.format("SELECT payload FROM %s WHERE used=true", getSegmentsTable()))
-                  .setFetchSize(connector.getStreamingFetchSize())
-                  .map(
-                      new ResultSetMapper<DataSegment>()
-                      {
-                        @Override
-                        public DataSegment map(int index, ResultSet r, StatementContext ctx)
-                            throws SQLException
-                        {
-                          try {
-                            return DATA_SEGMENT_INTERNER.intern(jsonMapper.readValue(
-                                r.getBytes("payload"),
-                                DataSegment.class
-                            ));
-                          }
-                          catch (IOException e) {
-                            log.makeAlert(e, "Failed to read segment from db.");
-                            return null;
+      while(true) {
+        String sql;
+        if (lastVersion == null) {
+          sql = String.format("SELECT payload FROM %s WHERE used=true ORDER BY version LIMIT %d",
+              getSegmentsTable(),
+              pollPageSize);
+        } else {
+          sql = String.format("SELECT payload FROM %s WHERE used=true AND version >= '%s' ORDER BY version LIMIT %d",
+              getSegmentsTable(),
+              lastVersion,
+              pollPageSize);
+        }
+        List<DataSegment> segments = connector.inReadOnlyTransaction(
+            new TransactionCallback<List<DataSegment>>() {
+              @Override
+              public List<DataSegment> inTransaction(Handle handle, TransactionStatus status) throws Exception {
+                return handle
+                    .createQuery(sql)
+                    .setFetchSize(connector.getStreamingFetchSize())
+                    .map(
+                        new ResultSetMapper<DataSegment>() {
+                          @Override
+                          public DataSegment map(int index, ResultSet r, StatementContext ctx)
+                              throws SQLException {
+                            try {
+                              return DATA_SEGMENT_INTERNER.intern(jsonMapper.readValue(
+                                  r.getBytes("payload"),
+                                  DataSegment.class
+                              ));
+                            } catch (IOException e) {
+                              log.makeAlert(e, "Failed to read segment from db.");
+                              return null;
+                            }
                           }
                         }
-                      }
-                  )
-                  .list();
+                    )
+                    .list();
+              }
             }
+        );
+        int newSegmentCount = 0;
+        for (DataSegment segment: segments) {
+          if (!newSegments.contains(segment)) {
+            newSegments.add(segment);
+            newSegmentCount++;
           }
-      );
+        }
 
-      if (segments == null || segments.isEmpty()) {
-        log.warn("No segments found in the database!");
+        if (segments.isEmpty() || segments.size() < pollPageSize|| newSegmentCount == 0) {
+          break;
+        }
+      }
+
+      if (newSegments.isEmpty()) {
+        log.warn("No new segments found in the database !");
         return;
       }
 
       final Collection<DataSegment> segmentsFinal = Collections2.filter(
-          segments, Predicates.notNull()
+          newSegments, Predicates.notNull()
       );
 
-      log.info("Polled and found %,d segments in the database", segments.size());
+      log.info("Polled and found %,d new segments in the database", newSegments.size());
 
       for (final DataSegment segment : segmentsFinal) {
         String datasourceName = segment.getDataSource();
