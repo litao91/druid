@@ -512,8 +512,9 @@ public class SQLMetadataSegmentManager implements MetadataSegmentManager
       log.info("Polled and found %,d new segments in the database", newSegments.size());
 
       for (final DataSegment segment : segmentsFinal) {
-        String datasourceName = segment.getDataSource();
+        lastVersion = segment.getVersion().compareTo(lastVersion) > 0 ? segment.getVersion() : lastVersion;
 
+        String datasourceName = segment.getDataSource();
         DruidDataSource dataSource = newDataSources.get(datasourceName);
         if (dataSource == null) {
           dataSource = new DruidDataSource(
