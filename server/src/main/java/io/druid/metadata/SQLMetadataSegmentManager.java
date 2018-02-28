@@ -473,7 +473,7 @@ public class SQLMetadataSegmentManager implements MetadataSegmentManager
                       try {
                         DateTime created = DateTime.parse(r.getString("created_date"),
                             ISODateTimeFormat.dateTimeParser());
-                        if (created.isAfter(lastCreated)) {
+                        if (lastCreated == null || created.isAfter(lastCreated)) {
                           lastCreated = created;
                         }
 
@@ -540,6 +540,11 @@ public class SQLMetadataSegmentManager implements MetadataSegmentManager
           }
         }
       }
+      int segCnt = 0;
+      for(DruidDataSource ds: dataSources.get().values()) {
+        segCnt += ds.getSegments().size();
+      }
+      log.info("Segment polling done, current segment count: %d", segCnt);
     }
     catch (Exception e) {
       log.makeAlert(e, "Problem polling DB.").emit();
