@@ -52,6 +52,9 @@ public class DruidNode
   @Min(0) @Max(0xffff)
   private int port = -1;
 
+  @JsonProperty
+  private String portConflictFlagFile;
+
   /**
    * host = null     , port = null -> host = _default_, port = -1
    * host = "abc:123", port = null -> host = abc, port = 123
@@ -72,14 +75,19 @@ public class DruidNode
   public DruidNode(
       @JacksonInject @Named("serviceName") @JsonProperty("service") String serviceName,
       @JsonProperty("host") String host,
-      @JacksonInject @Named("servicePort") @JsonProperty("port") Integer port
+      @JacksonInject @Named("servicePort") @JsonProperty("port") Integer port,
+      @JacksonInject("portConflictFlagFile") String portConflictFlagFile
   )
   {
-    init(serviceName, host, port);
+    init(serviceName, host, port, portConflictFlagFile);
+  }
+
+  public DruidNode(String ServiceName, String host, Integer port) {
+    init(serviceName, host, port, null);
   }
 
 
-  private void init(String serviceName, String host, Integer port)
+  private void init(String serviceName, String host, Integer port, String portConflictFlagFile)
   {
     Preconditions.checkNotNull(serviceName);
     this.serviceName = serviceName;
@@ -112,6 +120,7 @@ public class DruidNode
 
     this.port = port;
     this.host = host;
+    this.portConflictFlagFile = portConflictFlagFile;
   }
 
   public String getServiceName()
@@ -127,6 +136,10 @@ public class DruidNode
   public int getPort()
   {
     return port;
+  }
+
+  public String getPortConflictFlagFile() {
+    return portConflictFlagFile;
   }
 
   public DruidNode withService(String service)
