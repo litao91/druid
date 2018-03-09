@@ -16,13 +16,11 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
-package io.druid.query.aggregation.datasketches.theta;
+package io.druid.query.aggregation.datasketches.hll;
 
 import com.yahoo.memory.WritableMemory;
-import com.yahoo.sketches.Family;
-import com.yahoo.sketches.theta.SetOperation;
-import com.yahoo.sketches.theta.Union;
+import com.yahoo.sketches.hll.HllSketch;
+import com.yahoo.sketches.hll.Union;
 import io.druid.query.aggregation.BufferAggregator;
 import io.druid.query.monomorphicprocessing.RuntimeShapeInspector;
 import io.druid.segment.ObjectColumnSelector;
@@ -32,48 +30,38 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import java.nio.ByteBuffer;
 import java.util.IdentityHashMap;
 
-public class SketchBufferAggregator implements BufferAggregator {
+public class HllSketchBufferAggregator implements BufferAggregator {
   private final ObjectColumnSelector selector;
-  private final int size;
+  private final int lgk;
   private final int maxIntermediateSize;
+
+  /**
+   * Map the position to the Union object inside a byteBuffer
+   */
   private final IdentityHashMap<ByteBuffer, Int2ObjectMap<Union>> unions = new IdentityHashMap<>();
+
+  /**
+   * map the byte buffer to the wrapped Writable Memory
+   */
   private final IdentityHashMap<ByteBuffer, WritableMemory> memCache = new IdentityHashMap<>();
 
-  public SketchBufferAggregator(ObjectColumnSelector selector, int size, int maxIntermediateSize) {
+  public HllSketchBufferAggregator(ObjectColumnSelector selector, int lgK, int maxIntermediateSize) {
     this.selector = selector;
-    this.size = size;
+    this.lgk = lgK;
     this.maxIntermediateSize = maxIntermediateSize;
   }
 
+
+  /**
+   * Initialize the buffer in the given location.
+   *
+   * @param buf      byte buffer to initialize
+   * @param position offset within the byte buffer for initialization
+   */
   @Override
   public void init(ByteBuffer buf, int position) {
+    // at the time of initialization, the memory is not wrapped.
     createNewUnion(buf, position, false);
-  }
-
-  @Override
-  public void aggregate(ByteBuffer buf, int position) {
-    Object update = selector.get();
-    if (update == null) {
-      return;
-    }
-
-    Union union = getOrCreateUnion(buf, position);
-    SketchAggregator.updateUnion(union, update);
-  }
-
-  @Override
-  public Object get(ByteBuffer buf, int position) {
-    Int2ObjectMap<Union> unionMap = unions.get(buf);
-    Union union = unionMap != null ? unionMap.get(position) : null;
-    if (union == null) {
-      return SketchHolder.EMPTY;
-    }
-    //in the code below, I am returning SetOp.getResult(true, null)
-    //"true" returns an ordered sketch but slower to compute than unordered sketch.
-    //however, advantage of ordered sketch is that they are faster to "union" later
-    //given that results from the aggregator will be combined further, it is better
-    //to return the ordered sketch here
-    return SketchHolder.of(union.getResult(true, null));
   }
 
   private Union getOrCreateUnion(ByteBuffer buf, int position) {
@@ -85,18 +73,67 @@ public class SketchBufferAggregator implements BufferAggregator {
     return createNewUnion(buf, position, true);
   }
 
-  private Union createNewUnion(ByteBuffer buf, int position, boolean isWrapped) {
+  /**
+   * Create a hll/Union object in a given position of a buf
+   *
+   * @param buf
+   * @param position
+   * @param wrapped  whether the memory is Union image
+   * @return
+   */
+  private Union createNewUnion(ByteBuffer buf, int position, boolean wrapped) {
+    // the region to be written to
     WritableMemory mem = getMemory(buf).writableRegion(position, maxIntermediateSize);
-    Union union = isWrapped
-        ? (Union) SetOperation.wrap(mem)
-        : (Union) SetOperation.builder().setNominalEntries(size).build(Family.UNION, mem);
+    // if it's wrapped, we use the image, otherwise we create a new union on top of it.
+    Union union = wrapped ? Union.writableWrap(mem) : new Union(lgk, mem);
+
+    // Cache the buffer
     Int2ObjectMap<Union> unionMap = unions.get(buf);
+    // if the buf is not in the map
     if (unionMap == null) {
       unionMap = new Int2ObjectOpenHashMap<>();
       unions.put(buf, unionMap);
     }
+    // map the object to the concrete object
     unionMap.put(position, union);
     return union;
+  }
+
+  private WritableMemory getMemory(ByteBuffer buffer) {
+    WritableMemory mem = memCache.get(buffer);
+    if (mem == null) {
+      mem = WritableMemory.wrap(buffer);
+      memCache.put(buffer, mem);
+    }
+    return mem;
+  }
+
+  /**
+   * Get the union in the given position, update it (since the memory is wrapped, it will automatically update
+   * the underlying ByteBuffer
+   *
+   * @param buf byte buffer storing the byte array representation of the aggregate
+   * @param position offset within the byte buffer at which the current aggregate value is stored
+   */
+  @Override
+  public void aggregate(ByteBuffer buf, int position) {
+    Object update = selector.get();
+    if (update == null) {
+      return;
+    }
+
+    Union union = getOrCreateUnion(buf, position);
+    HllSketchAggregator.updateUnion(union, update);
+  }
+
+  @Override
+  public Object get(ByteBuffer buf, int position) {
+    Int2ObjectMap<Union> unionMap = unions.get(buf);
+    Union union = unionMap != null ? unionMap.get(position) : null;
+    if (union == null) {
+      return HllSketchHolder.of(new HllSketch(lgk));
+    }
+    return HllSketchHolder.of(union.getResult());
   }
 
   @Override
@@ -120,6 +157,15 @@ public class SketchBufferAggregator implements BufferAggregator {
     inspector.visit("selector", selector);
   }
 
+  /**
+   * This method tells the BufferAggregator that the cached object at a certain location has been located to a different
+   * location
+   *
+   * @param oldPosition old position of a cached object before aggregation buffer relocates to a new ByteBuffer.
+   * @param newPosition new position of a cached object after aggregation buffer relocates to a new ByteBuffer.
+   * @param oldBuffer old aggregation buffer.
+   * @param newBuffer new aggregation buffer.
+   */
   @Override
   public void relocate(int oldPosition, int newPosition, ByteBuffer oldBuffer, ByteBuffer newBuffer) {
     createNewUnion(newBuffer, newPosition, true);
@@ -132,14 +178,4 @@ public class SketchBufferAggregator implements BufferAggregator {
       }
     }
   }
-
-  private WritableMemory getMemory(ByteBuffer buffer) {
-    WritableMemory mem = memCache.get(buffer);
-    if (mem == null) {
-      mem = WritableMemory.wrap(buffer);
-      memCache.put(buffer, mem);
-    }
-    return mem;
-  }
-
 }

@@ -16,42 +16,47 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package io.druid.query.aggregation.datasketches.hll;
 
-package io.druid.query.aggregation.datasketches.theta;
-
-import com.yahoo.sketches.Family;
-import com.yahoo.sketches.theta.SetOperation;
-import com.yahoo.sketches.theta.Union;
+import com.yahoo.sketches.hll.HllSketch;
+import com.yahoo.sketches.hll.Union;
 import io.druid.java.util.common.ISE;
 import io.druid.query.aggregation.Aggregator;
 import io.druid.segment.ObjectColumnSelector;
 
 import java.util.List;
 
-public class SketchAggregator implements Aggregator {
+public class HllSketchAggregator implements Aggregator {
   private final ObjectColumnSelector selector;
-  private final int size;
+  private final int lgk;
   private Union union;
 
-  public SketchAggregator(ObjectColumnSelector selector, int size) {
-    this.selector = selector;
-    this.size = size;
-  }
-
-  private void initUnion() {
-    union = new SynchronizedUnion((Union) SetOperation.builder().setNominalEntries(size).build(Family.UNION));
-  }
-
+  /**
+   * Combine the current column value to the united representation. In this case, a HllSketch Union
+   */
   @Override
   public void aggregate() {
     Object update = selector.get();
+    // if the input is null, nothing to do
     if (update == null) {
       return;
     }
+    // if the aggregator is null, create a new one
     if (union == null) {
       initUnion();
     }
+
+    // the real aggregate logic
     updateUnion(union, update);
+  }
+
+  public HllSketchAggregator(ObjectColumnSelector selector, int lgk) {
+    this.selector = selector;
+    this.lgk = lgk;
+  }
+
+  private void initUnion() {
+    union = new Union(this.lgk);
   }
 
   @Override
@@ -62,14 +67,9 @@ public class SketchAggregator implements Aggregator {
   @Override
   public Object get() {
     if (union == null) {
-      return SketchHolder.EMPTY;
+      return HllSketchHolder.of(new HllSketch(lgk));
     }
-    //in the code below, I am returning SetOp.getResult(true, null)
-    //"true" returns an ordered sketch but slower to compute than unordered sketch.
-    //however, advantage of ordered sketch is that they are faster to "union" later
-    //given that results from the aggregator will be combined further, it is better
-    //to return the ordered sketch here
-    return SketchHolder.of(union.getResult(true, null));
+    return HllSketchHolder.of(union.getResult());
   }
 
   @Override
@@ -78,18 +78,24 @@ public class SketchAggregator implements Aggregator {
   }
 
   @Override
-  public long getLong() {
-    throw new UnsupportedOperationException("Not implemented");
-  }
-
-  @Override
   public void close() {
     union = null;
   }
 
+  @Override
+  public long getLong() {
+    throw new UnsupportedOperationException("Not implemented");
+  }
+
+  /**
+   * Update the given value into the hll sketch union
+   *
+   * @param union
+   * @param update
+   */
   static void updateUnion(Union union, Object update) {
-    if (update instanceof SketchHolder) {
-      ((SketchHolder) update).updateUnion(union);
+    if (update instanceof HllSketchHolder) {
+      ((HllSketchHolder) update).updateUnion(union);
     } else if (update instanceof String) {
       union.update((String) update);
     } else if (update instanceof byte[]) {

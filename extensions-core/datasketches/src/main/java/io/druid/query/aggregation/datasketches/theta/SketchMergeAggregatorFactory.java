@@ -29,9 +29,7 @@ import java.util.List;
 
 public class SketchMergeAggregatorFactory extends SketchAggregatorFactory
 {
-
-  private static final byte CACHE_TYPE_ID = 15;
-
+   private static final byte CACHE_TYPE_ID = 15;
   private final boolean shouldFinalize;
   private final boolean isInputThetaSketch;
   private final Integer errorBoundsStdDev;
@@ -46,6 +44,7 @@ public class SketchMergeAggregatorFactory extends SketchAggregatorFactory
       @JsonProperty("errorBoundsStdDev") Integer errorBoundsStdDev
   )
   {
+
     super(name, fieldName, size, CACHE_TYPE_ID);
     this.shouldFinalize = (shouldFinalize == null) ? true : shouldFinalize.booleanValue();
     this.isInputThetaSketch = (isInputThetaSketch == null) ? false : isInputThetaSketch.booleanValue();
@@ -161,18 +160,18 @@ public class SketchMergeAggregatorFactory extends SketchAggregatorFactory
     if (shouldFinalize != that.shouldFinalize) {
       return false;
     }
-    
+
     if (errorBoundsStdDev == null ^ that.errorBoundsStdDev == null) {
       // one of the two stddevs (not both) are null
       return false;
     }
 
-    if (errorBoundsStdDev != null && that.errorBoundsStdDev != null && 
+    if (errorBoundsStdDev != null && that.errorBoundsStdDev != null &&
         errorBoundsStdDev.intValue() != that.errorBoundsStdDev.intValue()) {
       // neither stddevs are null, Integer values don't match
       return false;
     }
-    
+
     return isInputThetaSketch == that.isInputThetaSketch;
   }
 

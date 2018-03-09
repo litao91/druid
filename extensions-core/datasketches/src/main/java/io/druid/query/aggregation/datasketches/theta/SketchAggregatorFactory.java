@@ -36,8 +36,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
-public abstract class SketchAggregatorFactory extends AggregatorFactory
-{
+public abstract class SketchAggregatorFactory extends AggregatorFactory {
   public static final int DEFAULT_MAX_SKETCH_SIZE = 16384;
 
   protected final String name;
@@ -45,8 +44,7 @@ public abstract class SketchAggregatorFactory extends AggregatorFactory
   protected final int size;
   private final byte cacheId;
 
-  public SketchAggregatorFactory(String name, String fieldName, Integer size, byte cacheId)
-  {
+  public SketchAggregatorFactory(String name, String fieldName, Integer size, byte cacheId) {
     this.name = Preconditions.checkNotNull(name, "Must have a valid, non-null aggregator name");
     this.fieldName = Preconditions.checkNotNull(fieldName, "Must have a valid, non-null fieldName");
 
@@ -58,8 +56,7 @@ public abstract class SketchAggregatorFactory extends AggregatorFactory
 
   @SuppressWarnings("unchecked")
   @Override
-  public Aggregator factorize(ColumnSelectorFactory metricFactory)
-  {
+  public Aggregator factorize(ColumnSelectorFactory metricFactory) {
     ObjectColumnSelector selector = metricFactory.makeObjectColumnSelector(fieldName);
     if (selector == null) {
       return new EmptySketchAggregator();
@@ -70,8 +67,7 @@ public abstract class SketchAggregatorFactory extends AggregatorFactory
 
   @SuppressWarnings("unchecked")
   @Override
-  public BufferAggregator factorizeBuffered(ColumnSelectorFactory metricFactory)
-  {
+  public BufferAggregator factorizeBuffered(ColumnSelectorFactory metricFactory) {
     ObjectColumnSelector selector = metricFactory.makeObjectColumnSelector(fieldName);
     if (selector == null) {
       return EmptySketchBufferAggregator.instance();
@@ -81,79 +77,68 @@ public abstract class SketchAggregatorFactory extends AggregatorFactory
   }
 
   @Override
-  public Object deserialize(Object object)
-  {
+  public Object deserialize(Object object) {
     return SketchHolder.deserialize(object);
   }
 
   @Override
-  public Comparator<Object> getComparator()
-  {
+  public Comparator<Object> getComparator() {
     return SketchHolder.COMPARATOR;
   }
 
   @Override
-  public Object combine(Object lhs, Object rhs)
-  {
+  public Object combine(Object lhs, Object rhs) {
     return SketchHolder.combine(lhs, rhs, size);
   }
 
   @Override
   @JsonProperty
-  public String getName()
-  {
+  public String getName() {
     return name;
   }
 
   @JsonProperty
-  public String getFieldName()
-  {
+  public String getFieldName() {
     return fieldName;
   }
 
   @JsonProperty
-  public int getSize()
-  {
+  public int getSize() {
     return size;
   }
 
   @Override
-  public int getMaxIntermediateSize()
-  {
+  public int getMaxIntermediateSize() {
     return SetOperation.getMaxUnionBytes(size);
   }
 
   @Override
-  public List<String> requiredFields()
-  {
+  public List<String> requiredFields() {
     return Collections.singletonList(fieldName);
   }
 
   @Override
-  public byte[] getCacheKey()
-  {
+  public byte[] getCacheKey() {
     byte[] fieldNameBytes = StringUtils.toUtf8(fieldName);
     return ByteBuffer.allocate(1 + Ints.BYTES + fieldNameBytes.length)
-                     .put(cacheId)
-                     .putInt(size)
-                     .put(fieldNameBytes)
-                     .array();
+        .put(cacheId)
+        .putInt(size)
+        .put(fieldNameBytes)
+        .array();
   }
 
   @Override
-  public String toString()
-  {
+  public String toString() {
     return getClass().getSimpleName() + "{"
-           + "fieldName='" + fieldName + '\''
-           + ", name='" + name + '\''
-           + ", size=" + size
-           + '}';
+        + "fieldName='" + fieldName + '\''
+        + ", name='" + name + '\''
+        + ", size=" + size
+        + '}';
   }
 
 
   @Override
-  public boolean equals(Object o)
-  {
+  public boolean equals(Object o) {
     if (this == o) {
       return true;
     }
@@ -177,8 +162,7 @@ public abstract class SketchAggregatorFactory extends AggregatorFactory
   }
 
   @Override
-  public int hashCode()
-  {
+  public int hashCode() {
     int result = name.hashCode();
     result = 31 * result + fieldName.hashCode();
     result = 31 * result + size;

@@ -17,30 +17,23 @@
  * under the License.
  */
 
-package io.druid.segment.column;
+package io.druid.query.aggregation.datasketches.quantiles;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
+import java.io.IOException;
 
-/**
- */
-public enum ValueType {
-  FLOAT,
-  LONG,
-  STRING,
-  COMPLEX;
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.databind.JsonSerializer;
+import com.fasterxml.jackson.databind.SerializerProvider;
+import com.yahoo.sketches.quantiles.DoublesSketch;
 
-  @JsonCreator
-  public static ValueType fromString(String name) {
-    if (name == null) {
-      return null;
-    }
-    return valueOf(name.toUpperCase());
+public class DoublesSketchJsonSerializer extends JsonSerializer<DoublesSketch>
+{
+
+  @Override
+  public void serialize(final DoublesSketch sketch, final JsonGenerator generator, final SerializerProvider provider)
+      throws IOException
+  {
+    generator.writeBinary(sketch.toByteArray(true));
   }
 
-  public static boolean isNumeric(ValueType type) {
-    if (type == ValueType.LONG || type == ValueType.FLOAT) {
-      return true;
-    }
-    return false;
-  }
 }

@@ -17,30 +17,44 @@
  * under the License.
  */
 
-package io.druid.segment.column;
+package io.druid.query.aggregation.datasketches.quantiles;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
+import io.druid.query.aggregation.Aggregator;
 
-/**
- */
-public enum ValueType {
-  FLOAT,
-  LONG,
-  STRING,
-  COMPLEX;
+public class DoublesSketchNoOpAggregator implements Aggregator
+{
 
-  @JsonCreator
-  public static ValueType fromString(String name) {
-    if (name == null) {
-      return null;
-    }
-    return valueOf(name.toUpperCase());
+  @Override
+  public Object get()
+  {
+    return DoublesSketchOperations.EMPTY_SKETCH;
   }
 
-  public static boolean isNumeric(ValueType type) {
-    if (type == ValueType.LONG || type == ValueType.FLOAT) {
-      return true;
-    }
-    return false;
+  @Override
+  public void aggregate()
+  {
   }
+
+  @Override
+  public void reset() {
+
+  }
+
+  @Override
+  public void close()
+  {
+  }
+
+  @Override
+  public float getFloat()
+  {
+    throw new UnsupportedOperationException("Not implemented");
+  }
+
+  @Override
+  public long getLong()
+  {
+    throw new UnsupportedOperationException("Not implemented");
+  }
+
 }

@@ -16,64 +16,63 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package io.druid.query.aggregation.datasketches.hll;
 
-package io.druid.query.aggregation.datasketches.theta;
-
-import com.yahoo.sketches.theta.Sketch;
+import com.yahoo.sketches.hll.HllSketch;
 import io.druid.data.input.InputRow;
+import io.druid.segment.GenericColumnSerializer;
 import io.druid.segment.column.ColumnBuilder;
 import io.druid.segment.data.GenericIndexed;
+import io.druid.segment.data.IOPeon;
 import io.druid.segment.data.ObjectStrategy;
 import io.druid.segment.serde.ComplexColumnPartSupplier;
 import io.druid.segment.serde.ComplexMetricExtractor;
 import io.druid.segment.serde.ComplexMetricSerde;
+import io.druid.segment.serde.LargeColumnSupportedComplexColumnSerializer;
 
 import java.nio.ByteBuffer;
 
-public class SketchMergeComplexMetricSerde extends ComplexMetricSerde
-{
-  private SketchObjectStrategy strategy = new SketchObjectStrategy();
+public class HllSketchMergeComplexMetricSerde extends ComplexMetricSerde {
+  private HllSketchObjectStrategy strategy = new HllSketchObjectStrategy();
 
   @Override
-  public String getTypeName()
-  {
-    return SketchModule.THETA_SKETCH;
+  public String getTypeName() {
+    return HllSketchModule.HLL_SKETCH;
   }
 
   @Override
-  public ComplexMetricExtractor getExtractor()
-  {
-    return new ComplexMetricExtractor()
-    {
+  public ComplexMetricExtractor getExtractor() {
+    return new ComplexMetricExtractor() {
       @Override
-      public Class<?> extractedClass()
-      {
+      public Class<?> extractedClass() {
         return Object.class;
       }
 
       @Override
-      public Object extractValue(InputRow inputRow, String metricName)
-      {
+      public Object extractValue(InputRow inputRow, String metricName) {
         final Object object = inputRow.getRaw(metricName);
         if (object == null) {
           return object;
         }
-        return SketchHolder.deserialize(object);
+        return HllSketchHolder.deserialize(object);
       }
     };
   }
 
   @Override
-  public void deserializeColumn(ByteBuffer buffer, ColumnBuilder builder)
-  {
-    GenericIndexed<Sketch> ge = GenericIndexed.read(buffer, strategy, builder.getFileMapper());
+  public void deserializeColumn(ByteBuffer buffer, ColumnBuilder builder) {
+    GenericIndexed<HllSketch> ge = GenericIndexed.read(buffer, strategy, builder.getFileMapper());
     builder.setComplexColumn(new ComplexColumnPartSupplier(getTypeName(), ge));
   }
 
   @Override
-  public ObjectStrategy<Sketch> getObjectStrategy()
-  {
+  public ObjectStrategy getObjectStrategy() {
     return strategy;
+  }
+
+  @Override
+  public GenericColumnSerializer getSerializer(IOPeon peon, String column) {
+    return LargeColumnSupportedComplexColumnSerializer.create(peon, column, this.getObjectStrategy());
   }
 
 }

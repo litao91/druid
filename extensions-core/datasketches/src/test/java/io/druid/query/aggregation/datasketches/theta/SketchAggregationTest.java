@@ -61,15 +61,13 @@ import java.util.List;
 /**
  */
 @RunWith(Parameterized.class)
-public class SketchAggregationTest
-{
+public class SketchAggregationTest {
   private final AggregationTestHelper helper;
 
   @Rule
   public final TemporaryFolder tempFolder = new TemporaryFolder();
 
-  public SketchAggregationTest(final GroupByQueryConfig config)
-  {
+  public SketchAggregationTest(final GroupByQueryConfig config) {
     SketchModule sm = new SketchModule();
     sm.configure(null);
     helper = AggregationTestHelper.createGroupByQueryAggregationTestHelper(
@@ -80,8 +78,7 @@ public class SketchAggregationTest
   }
 
   @Parameterized.Parameters(name = "{0}")
-  public static Collection<?> constructorFeeder() throws IOException
-  {
+  public static Collection<?> constructorFeeder() throws IOException {
     final List<Object[]> constructors = Lists.newArrayList();
     for (GroupByQueryConfig config : GroupByQueryRunnerTest.testConfigs()) {
       constructors.add(new Object[]{config});
@@ -90,8 +87,7 @@ public class SketchAggregationTest
   }
 
   @Test
-  public void testSketchDataIngestAndGpByQuery() throws Exception
-  {
+  public void testSketchDataIngestAndGpByQuery() throws Exception {
     Sequence<Row> seq = helper.createIndexAndRunQueryOnSegment(
         new File(SketchAggregationTest.class.getClassLoader().getResource("sketch_test_data.tsv").getFile()),
         readFileFromClasspathAsString("sketch_test_data_record_parser.json"),
@@ -126,17 +122,16 @@ public class SketchAggregationTest
   }
 
   @Test
-  public void testThetaCardinalityOnSimpleColumn() throws Exception
-  {
+  public void testThetaCardinalityOnSimpleColumn() throws Exception {
     Sequence<Row> seq = helper.createIndexAndRunQueryOnSegment(
         new File(SketchAggregationTest.class.getClassLoader().getResource("simple_test_data.tsv").getFile()),
         readFileFromClasspathAsString("simple_test_data_record_parser2.json"),
         "["
-        + "  {"
-        + "    \"type\": \"count\","
-        + "    \"name\": \"count\""
-        + "  }"
-        + "]",
+            + "  {"
+            + "    \"type\": \"count\","
+            + "    \"name\": \"count\""
+            + "  }"
+            + "]",
         0,
         Granularities.NONE,
         1000,
@@ -218,8 +213,7 @@ public class SketchAggregationTest
   }
 
   @Test
-  public void testSketchMergeAggregatorFactorySerde() throws Exception
-  {
+  public void testSketchMergeAggregatorFactorySerde() throws Exception {
     assertAggregatorFactorySerde(new SketchMergeAggregatorFactory("name", "fieldName", 16, null, null, null));
     assertAggregatorFactorySerde(new SketchMergeAggregatorFactory("name", "fieldName", 16, false, true, null));
     assertAggregatorFactorySerde(new SketchMergeAggregatorFactory("name", "fieldName", 16, true, false, null));
@@ -227,9 +221,8 @@ public class SketchAggregationTest
   }
 
   @Test
-  public void testSketchMergeFinalization() throws Exception
-  {
-    SketchHolder sketch = SketchHolder.of(Sketches.updateSketchBuilder().build(128));
+  public void testSketchMergeFinalization() throws Exception {
+    SketchHolder sketch = SketchHolder.of(Sketches.updateSketchBuilder().setNominalEntries(128).build());
 
     SketchMergeAggregatorFactory agg = new SketchMergeAggregatorFactory("name", "fieldName", 16, null, null, null);
     Assert.assertEquals(0.0, ((Double) agg.finalizeComputation(sketch)).doubleValue(), 0.0001);
@@ -249,8 +242,7 @@ public class SketchAggregationTest
 
   }
 
-  private void assertAggregatorFactorySerde(AggregatorFactory agg) throws Exception
-  {
+  private void assertAggregatorFactorySerde(AggregatorFactory agg) throws Exception {
     Assert.assertEquals(
         agg,
         helper.getObjectMapper().readValue(
@@ -261,8 +253,7 @@ public class SketchAggregationTest
   }
 
   @Test
-  public void testSketchEstimatePostAggregatorSerde() throws Exception
-  {
+  public void testSketchEstimatePostAggregatorSerde() throws Exception {
     assertPostAggregatorSerde(
         new SketchEstimatePostAggregator(
             "name",
@@ -281,8 +272,7 @@ public class SketchAggregationTest
   }
 
   @Test
-  public void testSketchSetPostAggregatorSerde() throws Exception
-  {
+  public void testSketchSetPostAggregatorSerde() throws Exception {
     assertPostAggregatorSerde(
         new SketchSetPostAggregator(
             "name",
@@ -297,8 +287,7 @@ public class SketchAggregationTest
   }
 
   @Test
-  public void testCacheKey()
-  {
+  public void testCacheKey() {
     final SketchMergeAggregatorFactory factory1 = new SketchMergeAggregatorFactory(
         "name",
         "fieldName",
@@ -329,8 +318,7 @@ public class SketchAggregationTest
   }
 
   @Test
-  public void testRetentionDataIngestAndGpByQuery() throws Exception
-  {
+  public void testRetentionDataIngestAndGpByQuery() throws Exception {
     Sequence<Row> seq = helper.createIndexAndRunQueryOnSegment(
         new File(this.getClass().getClassLoader().getResource("retention_test_data.tsv").getFile()),
         readFileFromClasspathAsString("simple_test_data_record_parser.json"),
@@ -365,12 +353,11 @@ public class SketchAggregationTest
   }
 
   @Test
-  public void testSketchAggregatorFactoryComparator()
-  {
+  public void testSketchAggregatorFactoryComparator() {
     Comparator<Object> comparator = SketchHolder.COMPARATOR;
     Assert.assertEquals(0, comparator.compare(null, null));
 
-    Union union1 = (Union) SetOperation.builder().build(1<<4, Family.UNION);
+    Union union1 = (Union) SetOperation.builder().setNominalEntries(1 << 4).build(Family.UNION);
     union1.update("a");
     union1.update("b");
     Sketch sketch1 = union1.getResult();
@@ -378,7 +365,7 @@ public class SketchAggregationTest
     Assert.assertEquals(-1, comparator.compare(null, SketchHolder.of(sketch1)));
     Assert.assertEquals(1, comparator.compare(SketchHolder.of(sketch1), null));
 
-    Union union2 = (Union) SetOperation.builder().build(1<<4, Family.UNION);
+    Union union2 = (Union) SetOperation.builder().setNominalEntries(1 << 4).build(Family.UNION);
     union2.update("a");
     union2.update("b");
     union2.update("c");
@@ -393,10 +380,9 @@ public class SketchAggregationTest
   }
 
   @Test
-  public void testRelocation()
-  {
+  public void testRelocation() {
     final TestColumnSelectorFactory columnSelectorFactory = GrouperTestUtil.newColumnSelectorFactory();
-    SketchHolder sketchHolder = SketchHolder.of(Sketches.updateSketchBuilder().build(16));
+    SketchHolder sketchHolder = SketchHolder.of(Sketches.updateSketchBuilder().setNominalEntries(16).build());
     UpdateSketch updateSketch = (UpdateSketch) sketchHolder.getSketch();
     updateSketch.update(1);
 
@@ -409,8 +395,7 @@ public class SketchAggregationTest
     Assert.assertEquals(holders[0].getEstimate(), holders[1].getEstimate(), 0);
   }
 
-  private void assertPostAggregatorSerde(PostAggregator agg) throws Exception
-  {
+  private void assertPostAggregatorSerde(PostAggregator agg) throws Exception {
     Assert.assertEquals(
         agg,
         helper.getObjectMapper().readValue(
@@ -420,8 +405,7 @@ public class SketchAggregationTest
     );
   }
 
-  public final static String readFileFromClasspathAsString(String fileName) throws IOException
-  {
+  public final static String readFileFromClasspathAsString(String fileName) throws IOException {
     return Files.asCharSource(
         new File(SketchAggregationTest.class.getClassLoader().getResource(fileName).getFile()),
         Charset.forName("UTF-8")

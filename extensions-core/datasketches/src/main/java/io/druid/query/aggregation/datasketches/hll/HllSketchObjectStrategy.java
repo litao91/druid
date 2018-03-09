@@ -17,55 +17,55 @@
  * under the License.
  */
 
-package io.druid.query.aggregation.datasketches.theta;
+package io.druid.query.aggregation.datasketches.hll;
 
 import com.yahoo.memory.Memory;
-import com.yahoo.sketches.theta.Sketch;
+import com.yahoo.sketches.hll.HllSketch;
 import io.druid.java.util.common.IAE;
 import io.druid.segment.data.ObjectStrategy;
 
 import java.nio.ByteBuffer;
 
-public class SketchObjectStrategy implements ObjectStrategy
-{
-
+public class HllSketchObjectStrategy implements ObjectStrategy {
   private static final byte[] EMPTY_BYTES = new byte[]{};
 
   @Override
-  public int compare(Object s1, Object s2)
-  {
-    return SketchHolder.COMPARATOR.compare(s1, s2);
-  }
-
-  @Override
-  public Class<?> getClazz()
-  {
+  public Class getClazz() {
     return Object.class;
   }
 
+  /**
+   * Convert from underlying bytebuffer to HllSketchHolder
+   *
+   * @param buffer buffer to read value from
+   * @param numBytes number of bytes used to store the value, starting at buffer.position()
+   * @return
+   */
   @Override
-  public Object fromByteBuffer(ByteBuffer buffer, int numBytes)
-  {
+  public Object fromByteBuffer(ByteBuffer buffer, int numBytes) {
     if (numBytes == 0) {
-      return SketchHolder.EMPTY;
+      return HllSketchHolder.of(new HllSketch(21));
     }
-
-    return SketchHolder.of(Memory.wrap(buffer).region(buffer.position(), numBytes));
+    return HllSketchHolder.of(Memory.wrap(buffer).region(buffer.position(), numBytes));
   }
 
   @Override
-  public byte[] toBytes(Object obj)
-  {
-    if (obj instanceof SketchHolder) {
-      Sketch sketch = ((SketchHolder) obj).getSketch();
-      if (sketch.isEmpty()) {
+  public byte[] toBytes(Object obj) {
+    if (obj instanceof HllSketchHolder) {
+      HllSketch hllSketch = ((HllSketchHolder) obj).getHllSketch();
+      if (hllSketch.isEmpty()) {
         return EMPTY_BYTES;
       }
-      return sketch.toByteArray();
+      return hllSketch.toCompactByteArray();
     } else if (obj == null) {
       return EMPTY_BYTES;
     } else {
       throw new IAE("Unknown class[%s], toString[%s]", obj.getClass(), obj);
     }
+  }
+
+  @Override
+  public int compare(Object o1, Object o2) {
+    return HllSketchHolder.COMPARATOR.compare(o1, o2);
   }
 }

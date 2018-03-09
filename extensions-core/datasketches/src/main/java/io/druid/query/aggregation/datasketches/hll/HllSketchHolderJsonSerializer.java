@@ -16,31 +16,18 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+package io.druid.query.aggregation.datasketches.hll;
 
-package io.druid.segment.column;
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonSerializer;
+import com.fasterxml.jackson.databind.SerializerProvider;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
+import java.io.IOException;
 
-/**
- */
-public enum ValueType {
-  FLOAT,
-  LONG,
-  STRING,
-  COMPLEX;
-
-  @JsonCreator
-  public static ValueType fromString(String name) {
-    if (name == null) {
-      return null;
-    }
-    return valueOf(name.toUpperCase());
-  }
-
-  public static boolean isNumeric(ValueType type) {
-    if (type == ValueType.LONG || type == ValueType.FLOAT) {
-      return true;
-    }
-    return false;
+public class HllSketchHolderJsonSerializer extends JsonSerializer<HllSketchHolder> {
+  @Override
+  public void serialize(HllSketchHolder hllSketchHolder, JsonGenerator jsonGenerator, SerializerProvider serializerProvider) throws IOException, JsonProcessingException {
+    jsonGenerator.writeBinary(hllSketchHolder.getHllSketch().toCompactByteArray());
   }
 }
