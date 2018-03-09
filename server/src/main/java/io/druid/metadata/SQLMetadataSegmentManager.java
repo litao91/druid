@@ -47,6 +47,7 @@ import io.druid.timeline.partition.PartitionChunk;
 import org.joda.time.DateTime;
 import org.joda.time.Duration;
 import org.joda.time.Interval;
+import org.joda.time.format.ISODateTimeFormat;
 import org.skife.jdbi.v2.BaseResultSetMapper;
 import org.skife.jdbi.v2.Batch;
 import org.skife.jdbi.v2.FoldController;
@@ -57,14 +58,13 @@ import org.skife.jdbi.v2.StatementContext;
 import org.skife.jdbi.v2.TransactionCallback;
 import org.skife.jdbi.v2.TransactionStatus;
 import org.skife.jdbi.v2.tweak.HandleCallback;
-import org.skife.jdbi.v2.tweak.ResultSetMapper;
 import org.skife.jdbi.v2.util.ByteArrayMapper;
 
 import java.io.IOException;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -93,6 +93,10 @@ public class SQLMetadataSegmentManager implements MetadataSegmentManager
   private volatile ListenableFuture<?> future = null;
 
   private volatile boolean started = false;
+
+  private DateTime lastCreated = null;
+  private static final int POLL_PAGE_SIZE = 10000;
+  private static final int CREATED_TIME_SHIFT_MINUTE = 5;
 
   @Inject
   public SQLMetadataSegmentManager(
@@ -442,93 +446,105 @@ public class SQLMetadataSegmentManager implements MetadataSegmentManager
         return;
       }
 
-      ConcurrentHashMap<String, DruidDataSource> newDataSources = new ConcurrentHashMap<String, DruidDataSource>();
-
       log.debug("Starting polling of segment table");
 
-      // some databases such as PostgreSQL require auto-commit turned off
-      // to stream results back, enabling transactions disables auto-commit
-      //
-      // setting connection to read-only will allow some database such as MySQL
-      // to automatically use read-only transaction mode, further optimizing the query
-      final List<DataSegment> segments = connector.inReadOnlyTransaction(
-          new TransactionCallback<List<DataSegment>>()
-          {
-            @Override
-            public List<DataSegment> inTransaction(Handle handle, TransactionStatus status) throws Exception
-            {
-              return handle
-                  .createQuery(String.format("SELECT payload FROM %s WHERE used=true", getSegmentsTable()))
-                  .setFetchSize(connector.getStreamingFetchSize())
-                  .map(
-                      new ResultSetMapper<DataSegment>()
-                      {
-                        @Override
-                        public DataSegment map(int index, ResultSet r, StatementContext ctx)
-                            throws SQLException
-                        {
-                          try {
-                            return DATA_SEGMENT_INTERNER.intern(jsonMapper.readValue(
-                                r.getBytes("payload"),
-                                DataSegment.class
-                            ));
-                          }
-                          catch (IOException e) {
-                            log.makeAlert(e, "Failed to read segment from db.");
-                            return null;
-                          }
+      HashSet<DataSegment> newSegments = new HashSet<>();
+      // step1: segments with newer created_date
+      while (true) {
+        String sql;
+        if (lastCreated == null) {
+          sql = String.format("SELECT payload, created_date FROM %s WHERE used=true ORDER BY created_date LIMIT %d",
+              getSegmentsTable(),
+              POLL_PAGE_SIZE);
+        } else {
+          sql = String.format(
+              "SELECT payload, created_date FROM %s WHERE used=true AND created_date >= '%s' ORDER BY created_date LIMIT %d",
+              getSegmentsTable(),
+              // the wall time clock on distributed system is not reliable, use
+              lastCreated.minusMinutes(CREATED_TIME_SHIFT_MINUTE).toString(ISODateTimeFormat.dateTime()),
+              POLL_PAGE_SIZE);
+        }
+        log.info("Loading segment with sql: %s", sql);
+        List<DataSegment> segments = connector.inReadOnlyTransaction(
+            (handle, status) -> handle
+                .createQuery(sql)
+                .setFetchSize(connector.getStreamingFetchSize())
+                .map((index, r, ctx) -> {
+                      try {
+                        DateTime created = DateTime.parse(r.getString("created_date"),
+                            ISODateTimeFormat.dateTimeParser());
+                        if (lastCreated == null || created.isAfter(lastCreated)) {
+                          lastCreated = created;
                         }
-                      }
-                  )
-                  .list();
-            }
-          }
-      );
 
-      if (segments == null || segments.isEmpty()) {
-        log.warn("No segments found in the database!");
+                        return DATA_SEGMENT_INTERNER.intern(jsonMapper.readValue(
+                            r.getBytes("payload"),
+                            DataSegment.class
+                        ));
+                      } catch (IOException e) {
+                        log.makeAlert(e, "Failed to read segment from db.");
+                        return null;
+                      }
+                    }
+                )
+                .list()
+        );
+        int newSegmentCount = 0;
+        for (DataSegment segment : segments) {
+          if (!newSegments.contains(segment)) {
+            newSegments.add(segment);
+            newSegmentCount++;
+          }
+        }
+
+        if (segments.isEmpty() || segments.size() < POLL_PAGE_SIZE || newSegmentCount == 0) {
+          break;
+        }
+      }
+
+      if (newSegments.isEmpty()) {
+        log.warn("No new segments found in the database !");
         return;
       }
 
       final Collection<DataSegment> segmentsFinal = Collections2.filter(
-          segments, Predicates.notNull()
+          newSegments, Predicates.notNull()
       );
 
-      log.info("Polled and found %,d segments in the database", segments.size());
-
-      for (final DataSegment segment : segmentsFinal) {
-        String datasourceName = segment.getDataSource();
-
-        DruidDataSource dataSource = newDataSources.get(datasourceName);
-        if (dataSource == null) {
-          dataSource = new DruidDataSource(
-              datasourceName,
-              ImmutableMap.of("created", new DateTime().toString())
-          );
-
-          Object shouldBeNull = newDataSources.put(
-              datasourceName,
-              dataSource
-          );
-          if (shouldBeNull != null) {
-            log.warn(
-                "Just put key[%s] into dataSources and what was there wasn't null!?  It was[%s]",
+      log.info("Polled and found %,d new segments in the database", newSegments.size());
+      synchronized (lock) {
+        for (final DataSegment segment : segmentsFinal) {
+          String datasourceName = segment.getDataSource();
+          DruidDataSource dataSource = dataSources.get().get(datasourceName);
+          if (dataSource == null) {
+            dataSource = new DruidDataSource(
                 datasourceName,
-                shouldBeNull
+                ImmutableMap.of("created", new DateTime().toString())
             );
+
+            Object shouldBeNull = dataSources.get().put(
+                datasourceName,
+                dataSource
+            );
+            if (shouldBeNull != null) {
+              log.warn(
+                  "Just put key[%s] into dataSources and what was there wasn't null!?  It was[%s]",
+                  datasourceName,
+                  shouldBeNull
+              );
+            }
+          }
+
+          if (!dataSource.getSegments().contains(segment)) {
+            dataSource.addSegment(segment.getIdentifier(), segment);
           }
         }
-
-        if (!dataSource.getSegments().contains(segment)) {
-          dataSource.addSegment(segment.getIdentifier(), segment);
-        }
       }
-
-      synchronized (lock) {
-        if (started) {
-          dataSources.set(newDataSources);
-        }
+      int segCnt = 0;
+      for(DruidDataSource ds: dataSources.get().values()) {
+        segCnt += ds.getSegments().size();
       }
+      log.info("Segment polling done, current segment count: %d", segCnt);
     }
     catch (Exception e) {
       log.makeAlert(e, "Problem polling DB.").emit();
