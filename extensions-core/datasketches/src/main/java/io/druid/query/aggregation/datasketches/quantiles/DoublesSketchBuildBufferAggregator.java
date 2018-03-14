@@ -27,7 +27,10 @@ import com.yahoo.sketches.quantiles.UpdateDoublesSketch;
 
 import io.druid.query.aggregation.BufferAggregator;
 import io.druid.query.monomorphicprocessing.RuntimeShapeInspector;
+import io.druid.segment.ColumnValueSelector;
+import io.druid.segment.FloatColumnSelector;
 import io.druid.segment.ObjectColumnSelector;
+import io.druid.segment.column.FloatColumn;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 
@@ -62,7 +65,8 @@ public class DoublesSketchBuildBufferAggregator implements BufferAggregator
   public synchronized void aggregate(final ByteBuffer buffer, final int position)
   {
     final UpdateDoublesSketch sketch = sketches.get(buffer).get(position);
-    sketch.update((Double)selector.get());
+    float f = (float) selector.get();
+    sketch.update(f);
   }
 
   @Override

@@ -29,12 +29,14 @@ import com.google.common.base.Preconditions;
 
 import io.druid.java.util.common.IAE;
 import io.druid.query.aggregation.AggregatorFactory;
+import io.druid.query.aggregation.AggregatorUtil;
 import io.druid.query.aggregation.PostAggregator;
 import io.druid.query.cache.CacheKeyBuilder;
 
 import com.yahoo.sketches.quantiles.DoublesSketch;
 
-public class DoublesSketchToStringPostAggregator implements PostAggregator {
+public class DoublesSketchToStringPostAggregator implements PostAggregator
+{
   public static final byte QUANTILES_DOUBLES_SKETCH_TO_STRING_CACHE_TYPE_ID = 0x20;
 
   private final String name;
@@ -43,40 +45,47 @@ public class DoublesSketchToStringPostAggregator implements PostAggregator {
   @JsonCreator
   public DoublesSketchToStringPostAggregator(
       @JsonProperty("name") final String name,
-      @JsonProperty("field") final PostAggregator field) {
+      @JsonProperty("field") final PostAggregator field)
+  {
     this.name = Preconditions.checkNotNull(name, "name is null");
     this.field = Preconditions.checkNotNull(field, "field is null");
   }
 
   @Override
   @JsonProperty
-  public String getName() {
+  public String getName()
+  {
     return name;
   }
 
   @JsonProperty
-  public PostAggregator getField() {
+  public PostAggregator getField()
+  {
     return field;
   }
 
   @Override
-  public Object compute(final Map<String, Object> combinedAggregators) {
+  public Object compute(final Map<String, Object> combinedAggregators)
+  {
     final DoublesSketch sketch = (DoublesSketch) field.compute(combinedAggregators);
     return sketch.toString();
   }
 
   @Override
-  public Comparator<String> getComparator() {
+  public Comparator<String> getComparator()
+  {
     throw new IAE("Comparing sketch summaries is not supported");
   }
 
   @Override
-  public Set<String> getDependentFields() {
+  public Set<String> getDependentFields()
+  {
     return field.getDependentFields();
   }
 
   @Override
-  public String toString() {
+  public String toString()
+  {
     return this.getClass().getSimpleName() + "{" +
         "name='" + name + '\'' +
         ", field=" + field +
@@ -84,7 +93,8 @@ public class DoublesSketchToStringPostAggregator implements PostAggregator {
   }
 
   @Override
-  public boolean equals(final Object o) {
+  public boolean equals(final Object o)
+  {
     if (this == o) {
       return true;
     }
@@ -99,19 +109,22 @@ public class DoublesSketchToStringPostAggregator implements PostAggregator {
   }
 
   @Override
-  public int hashCode() {
+  public int hashCode()
+  {
     return (name.hashCode() * 31 + field.hashCode()) * 31;
   }
 
   @Override
-  public byte[] getCacheKey() {
+  public byte[] getCacheKey()
+  {
     final CacheKeyBuilder builder = new CacheKeyBuilder(
         QUANTILES_DOUBLES_SKETCH_TO_STRING_CACHE_TYPE_ID).appendCacheable(field);
     return builder.build();
   }
 
   @Override
-  public PostAggregator decorate(final Map<String, AggregatorFactory> map) {
+  public PostAggregator decorate(final Map<String, AggregatorFactory> map)
+  {
     return this;
   }
 

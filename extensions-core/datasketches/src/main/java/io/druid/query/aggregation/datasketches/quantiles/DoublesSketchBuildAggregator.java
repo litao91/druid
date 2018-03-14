@@ -22,6 +22,8 @@ package io.druid.query.aggregation.datasketches.quantiles;
 import com.yahoo.sketches.quantiles.UpdateDoublesSketch;
 
 import io.druid.query.aggregation.Aggregator;
+import io.druid.segment.ColumnValueSelector;
+import io.druid.segment.FloatColumnSelector;
 import io.druid.segment.ObjectColumnSelector;
 
 public class DoublesSketchBuildAggregator implements Aggregator
@@ -42,7 +44,8 @@ public class DoublesSketchBuildAggregator implements Aggregator
   @Override
   public synchronized void aggregate()
   {
-    sketch.update((Double)valueSelector.get());
+    float f = (float) valueSelector.get();
+    sketch.update(f);
   }
 
   @Override
