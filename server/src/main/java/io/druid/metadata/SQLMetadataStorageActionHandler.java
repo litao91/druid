@@ -440,30 +440,24 @@ public class SQLMetadataStorageActionHandler<EntryType, StatusType, LogType, Loc
             )
                          .bind("entryId", entryId)
                          .map(
-                             new ResultSetMapper<Pair<Long, LockType>>()
-                             {
-                               @Override
-                               public Pair<Long, LockType> map(int index, ResultSet r, StatementContext ctx)
-                                   throws SQLException
-                               {
-                                 try {
-                                   return Pair.of(
-                                       r.getLong("id"),
-                                       jsonMapper.<LockType>readValue(
-                                           r.getBytes("lock_payload"),
-                                           lockType
-                                       )
-                                   );
-                                 }
-                                 catch (IOException e) {
-                                   log.makeAlert(e, "Failed to deserialize " + lockType.getType())
-                                      .addData("id", r.getLong("id"))
-                                      .addData(
-                                          "lockPayload", StringUtils.fromUtf8(r.getBytes("lock_payload"))
-                                      )
-                                      .emit();
-                                   throw new SQLException(e);
-                                 }
+                             (index, r, ctx) -> {
+                               try {
+                                 return Pair.of(
+                                     r.getLong("id"),
+                                     jsonMapper.<LockType>readValue(
+                                         r.getBytes("lock_payload"),
+                                         lockType
+                                     )
+                                 );
+                               }
+                               catch (IOException e) {
+                                 log.makeAlert(e, "Failed to deserialize " + lockType.getType())
+                                    .addData("id", r.getLong("id"))
+                                    .addData(
+                                        "lockPayload", StringUtils.fromUtf8(r.getBytes("lock_payload"))
+                                    )
+                                    .emit();
+                                 throw new SQLException(e);
                                }
                              }
                          )
