@@ -26,18 +26,21 @@ import io.druid.query.aggregation.BufferAggregator;
 import io.druid.segment.ColumnSelectorFactory;
 import io.druid.segment.ObjectColumnSelector;
 
-public class DoublesSketchMergeAggregatorFactory extends DoublesSketchAggregatorFactory {
+public class DoublesSketchMergeAggregatorFactory extends DoublesSketchAggregatorFactory
+{
   public static final byte QUANTILES_DOUBLES_SKETCH_MERGE_CACHE_TYPE_ID = 0x1C;
 
   @JsonCreator
   public DoublesSketchMergeAggregatorFactory(
       @JsonProperty("name") final String name,
-      @JsonProperty("k") final Integer k) {
+      @JsonProperty("k") final Integer k)
+  {
     super(name, name, k, QUANTILES_DOUBLES_SKETCH_MERGE_CACHE_TYPE_ID);
   }
 
   @Override
-  public Aggregator factorize(final ColumnSelectorFactory metricFactory) {
+  public Aggregator factorize(final ColumnSelectorFactory metricFactory)
+  {
     final ObjectColumnSelector selector = metricFactory.makeObjectColumnSelector(getFieldName());
     if (selector == null) {
       return new DoublesSketchNoOpAggregator();
@@ -46,9 +49,10 @@ public class DoublesSketchMergeAggregatorFactory extends DoublesSketchAggregator
   }
 
   @Override
-  public BufferAggregator factorizeBuffered(final ColumnSelectorFactory metricFactory) {
+  public BufferAggregator factorizeBuffered(final ColumnSelectorFactory metricFactory)
+  {
     final ObjectColumnSelector selector = metricFactory.makeObjectColumnSelector(getFieldName());
-    if (selector == null) {
+    if (selector  == null) {
       return new DoublesSketchNoOpBufferAggregator();
     }
     return new DoublesSketchMergeBufferAggregator(selector, getK(), getMaxIntermediateSize());

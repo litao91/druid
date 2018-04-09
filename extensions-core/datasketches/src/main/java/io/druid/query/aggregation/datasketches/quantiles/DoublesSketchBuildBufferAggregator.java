@@ -19,17 +19,16 @@
 
 package io.druid.query.aggregation.datasketches.quantiles;
 
-import java.nio.ByteBuffer;
-import java.util.IdentityHashMap;
-
 import com.yahoo.memory.WritableMemory;
 import com.yahoo.sketches.quantiles.UpdateDoublesSketch;
-
 import io.druid.query.aggregation.BufferAggregator;
 import io.druid.query.monomorphicprocessing.RuntimeShapeInspector;
 import io.druid.segment.ObjectColumnSelector;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+
+import java.nio.ByteBuffer;
+import java.util.IdentityHashMap;
 
 public class DoublesSketchBuildBufferAggregator implements BufferAggregator
 {
@@ -62,7 +61,8 @@ public class DoublesSketchBuildBufferAggregator implements BufferAggregator
   public synchronized void aggregate(final ByteBuffer buffer, final int position)
   {
     final UpdateDoublesSketch sketch = sketches.get(buffer).get(position);
-    sketch.update((Double)selector.get());
+    float f = (float) selector.get();
+    sketch.update(f);
   }
 
   @Override

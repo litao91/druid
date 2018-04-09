@@ -21,11 +21,10 @@ package io.druid.query.aggregation.datasketches.quantiles;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.metamx.common.IAE;
 import com.yahoo.sketches.Util;
 import com.yahoo.sketches.quantiles.DoublesSketch;
 import com.yahoo.sketches.quantiles.DoublesUnion;
-
+import io.druid.java.util.common.IAE;
 import io.druid.query.aggregation.Aggregator;
 import io.druid.query.aggregation.AggregatorFactory;
 import io.druid.query.aggregation.AggregatorFactoryNotMergeableException;
@@ -42,8 +41,8 @@ import java.util.Objects;
 
 public class DoublesSketchAggregatorFactory extends AggregatorFactory
 {
-  public static final byte QUANTILES_DOUBLES_SKETCH_BUILD_CACHE_TYPE_ID = 0x1B;
 
+  public static final byte QUANTILES_DOUBLES_SKETCH_BUILD_CACHE_TYPE_ID = 0x1B;
   private static final int DEFAULT_K = 128;
 
   // Used for sketch size estimation.
@@ -102,7 +101,7 @@ public class DoublesSketchAggregatorFactory extends AggregatorFactory
     if (metricFactory.getColumnCapabilities(fieldName) != null
         && ValueType.isNumeric(metricFactory.getColumnCapabilities(fieldName).getType())) {
       final ObjectColumnSelector selector = metricFactory.makeObjectColumnSelector(fieldName);
-      if (selector instanceof ObjectColumnSelector) {
+      if (selector == null) {
         return new DoublesSketchNoOpBufferAggregator();
       }
       return new DoublesSketchBuildBufferAggregator(selector, k, getMaxIntermediateSize());

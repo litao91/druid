@@ -21,17 +21,16 @@ package io.druid.query.aggregation.datasketches.quantiles;
 
 import com.yahoo.sketches.quantiles.DoublesSketch;
 import com.yahoo.sketches.quantiles.DoublesUnion;
-
 import io.druid.query.aggregation.Aggregator;
 import io.druid.segment.ObjectColumnSelector;
 
 public class DoublesSketchMergeAggregator implements Aggregator
 {
 
-  private final ObjectColumnSelector selector;
+  private final ObjectColumnSelector<DoublesSketch> selector;
   private DoublesUnion union;
 
-  public DoublesSketchMergeAggregator(final ObjectColumnSelector selector, final int k)
+  public DoublesSketchMergeAggregator(final ObjectColumnSelector<DoublesSketch> selector, final int k)
   {
     this.selector = selector;
     union = DoublesUnion.builder().setMaxK(k).build();
@@ -40,7 +39,7 @@ public class DoublesSketchMergeAggregator implements Aggregator
   @Override
   public synchronized void aggregate()
   {
-    final DoublesSketch sketch = (DoublesSketch) selector.get();
+    final DoublesSketch sketch = selector.get();
     if (sketch == null) {
       return;
     }
@@ -49,6 +48,7 @@ public class DoublesSketchMergeAggregator implements Aggregator
 
   @Override
   public void reset() {
+
   }
 
   @Override

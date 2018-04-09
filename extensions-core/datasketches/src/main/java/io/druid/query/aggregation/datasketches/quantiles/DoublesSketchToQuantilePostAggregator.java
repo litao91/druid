@@ -19,26 +19,22 @@
 
 package io.druid.query.aggregation.datasketches.quantiles;
 
-import java.util.Comparator;
-import java.util.Map;
-import java.util.Set;
-
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.Doubles;
-
+import com.yahoo.sketches.quantiles.DoublesSketch;
 import io.druid.query.aggregation.AggregatorFactory;
 import io.druid.query.aggregation.PostAggregator;
 import io.druid.query.cache.CacheKeyBuilder;
 
-import com.yahoo.sketches.quantiles.DoublesSketch;
+import java.util.Comparator;
+import java.util.Map;
+import java.util.Set;
 
 public class DoublesSketchToQuantilePostAggregator implements PostAggregator
 {
-
   public static final byte QUANTILES_DOUBLES_SKETCH_TO_QUANTILE_CACHE_TYPE_ID = 0x1E;
-
   private final String name;
   private final PostAggregator field;
   private final double fraction;
