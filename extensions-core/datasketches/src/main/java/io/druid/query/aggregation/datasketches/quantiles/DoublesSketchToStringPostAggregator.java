@@ -19,21 +19,18 @@
 
 package io.druid.query.aggregation.datasketches.quantiles;
 
-import java.util.Comparator;
-import java.util.Map;
-import java.util.Set;
-
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Preconditions;
-
+import com.yahoo.sketches.quantiles.DoublesSketch;
 import io.druid.java.util.common.IAE;
 import io.druid.query.aggregation.AggregatorFactory;
-import io.druid.query.aggregation.AggregatorUtil;
 import io.druid.query.aggregation.PostAggregator;
 import io.druid.query.cache.CacheKeyBuilder;
 
-import com.yahoo.sketches.quantiles.DoublesSketch;
+import java.util.Comparator;
+import java.util.Map;
+import java.util.Set;
 
 public class DoublesSketchToStringPostAggregator implements PostAggregator
 {

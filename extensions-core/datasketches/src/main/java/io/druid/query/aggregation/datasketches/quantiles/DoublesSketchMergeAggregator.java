@@ -21,9 +21,7 @@ package io.druid.query.aggregation.datasketches.quantiles;
 
 import com.yahoo.sketches.quantiles.DoublesSketch;
 import com.yahoo.sketches.quantiles.DoublesUnion;
-
 import io.druid.query.aggregation.Aggregator;
-import io.druid.segment.ColumnValueSelector;
 import io.druid.segment.ObjectColumnSelector;
 
 public class DoublesSketchMergeAggregator implements Aggregator
