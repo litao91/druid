@@ -149,6 +149,10 @@ public class DruidServer implements Comparable
     return segments.get(segmentName);
   }
 
+  public DruidServer addDataSegment(DataSegment segment) {
+    return addDataSegment(segment.getIdentifier(), segment);
+  }
+
   public DruidServer addDataSegment(String segmentId, DataSegment segment)
   {
     synchronized (lock) {
