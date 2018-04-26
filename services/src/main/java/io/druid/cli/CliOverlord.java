@@ -44,6 +44,7 @@ import io.druid.guice.LifecycleModule;
 import io.druid.guice.ListProvider;
 import io.druid.guice.ManageLifecycle;
 import io.druid.guice.PolyBind;
+import io.druid.indexing.HybridTaskStorage;
 import io.druid.indexing.common.actions.LocalTaskActionClientFactory;
 import io.druid.indexing.common.actions.TaskActionClientFactory;
 import io.druid.indexing.common.actions.TaskActionToolbox;
@@ -200,6 +201,9 @@ public class CliOverlord extends ServerRunnable
 
             storageBinder.addBinding("metadata").to(MetadataTaskStorage.class).in(ManageLifecycle.class);
             binder.bind(MetadataTaskStorage.class).in(LazySingleton.class);
+
+            storageBinder.addBinding("hybrid").to(HybridTaskStorage.class).in(ManageLifecycle.class);
+            binder.bind(HybridTaskStorage.class).in(LazySingleton.class);
           }
 
           private void configureRunners(Binder binder)
