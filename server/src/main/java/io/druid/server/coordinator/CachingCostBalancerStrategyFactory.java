@@ -22,10 +22,10 @@ package io.druid.server.coordinator;
 import com.fasterxml.jackson.annotation.JacksonInject;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.google.common.util.concurrent.ListeningExecutorService;
-import io.druid.java.util.emitter.EmittingLogger;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import com.metamx.emitter.EmittingLogger;
 import io.druid.client.ServerInventoryView;
 import io.druid.client.ServerView;
-import io.druid.java.util.common.concurrent.Execs;
 import io.druid.java.util.common.lifecycle.Lifecycle;
 import io.druid.java.util.common.lifecycle.LifecycleStart;
 import io.druid.java.util.common.lifecycle.LifecycleStop;
@@ -37,6 +37,7 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -45,7 +46,10 @@ public class CachingCostBalancerStrategyFactory implements BalancerStrategyFacto
   private static final EmittingLogger LOG = new EmittingLogger(CachingCostBalancerStrategyFactory.class);
 
   /** Must be single-threaded, because {@link ClusterCostCache.Builder} and downstream builders are not thread-safe */
-  private final ExecutorService executor = Execs.singleThreaded("CachingCostBalancerStrategy-executor");
+  private final ExecutorService executor = Executors.newSingleThreadExecutor(
+      new ThreadFactoryBuilder()
+          .setDaemon(true)
+          .setNameFormat("CachingCostBalancerStrategy-executor").build());
   private final ClusterCostCache.Builder clusterCostCacheBuilder = ClusterCostCache.builder();
   /**
    * Atomic is needed to use compareAndSet(true, true) construction below, that is linearizable with the write made from
@@ -91,7 +95,7 @@ public class CachingCostBalancerStrategyFactory implements BalancerStrategyFacto
         }
     );
 
-    serverInventoryView.registerServerRemovedCallback(
+    serverInventoryView.registerServerCallback(
         executor,
         server -> {
           clusterCostCacheBuilder.removeServer(server.getName());

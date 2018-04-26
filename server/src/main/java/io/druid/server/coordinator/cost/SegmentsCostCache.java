@@ -22,13 +22,13 @@ package io.druid.server.coordinator.cost;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Ordering;
 import io.druid.java.util.common.ISE;
-import io.druid.java.util.common.Intervals;
 import io.druid.java.util.common.granularity.DurationGranularity;
 import io.druid.java.util.common.guava.Comparators;
 import io.druid.server.coordinator.CostBalancerStrategy;
 import io.druid.timeline.DataSegment;
 import org.apache.commons.math3.util.FastMath;
 import org.joda.time.Interval;
+import org.joda.time.chrono.ISOChronology;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -403,7 +403,8 @@ public class SegmentsCostCache
             .mapToLong(s -> s.getInterval().getEndMillis())
             .max()
             .orElseGet(interval::getEndMillis);
-        return new Bucket(Intervals.utc(interval.getStartMillis(), bucketEndMillis), segmentsList, leftSum, rightSum);
+        return new Bucket(new Interval(interval.getStartMillis(), bucketEndMillis, ISOChronology.getInstanceUTC()),
+            segmentsList, leftSum, rightSum);
       }
     }
   }
