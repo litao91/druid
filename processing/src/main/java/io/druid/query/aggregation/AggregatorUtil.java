@@ -82,6 +82,8 @@ public class AggregatorUtil
   public static final byte QUANTILES_DOUBLES_SKETCH_TO_QUANTILES_CACHE_TYPE_ID = 0x1F;
   public static final byte QUANTILES_DOUBLES_SKETCH_TO_STRING_CACHE_TYPE_ID = 0x20;
 
+  public static final byte HLL_SKETCH_CACHE_TYPE_ID = 0x21;
+
   /**
    * returns the list of dependent postAggregators that should be calculated in order to calculate given postAgg
    *
