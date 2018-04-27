@@ -44,4 +44,5 @@ public class PostAggregatorIds
   public static final byte FINALIZING_FIELD_ACCESS = 20;
   public static final byte ZTEST = 21;
   public static final byte PVALUE_FROM_ZTEST = 22;
+  public static final byte DATA_SKETCHES_HLL_SKETCH_ESTIMATE = 23;
 }
