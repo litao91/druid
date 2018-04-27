@@ -26,6 +26,7 @@ import com.yahoo.sketches.hll.Union;
 import io.druid.java.util.common.StringUtils;
 import io.druid.query.aggregation.Aggregator;
 import io.druid.query.aggregation.AggregatorFactory;
+import io.druid.query.aggregation.AggregatorUtil;
 import io.druid.query.aggregation.BufferAggregator;
 import io.druid.segment.ColumnSelectorFactory;
 import io.druid.segment.BaseObjectColumnValueSelector;
@@ -36,11 +37,10 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Represets columne aggregation
+ * Represents columne aggregation
  */
 public class HllSketchMergeAggregatorFactory extends AggregatorFactory
 {
-  private static final byte HLL_SKETCH_CACHE_TYPE_ID = 0x21;
   public static final int DEFAULT_MAX_LGK = 21;
 
   protected final String name;
@@ -63,11 +63,11 @@ public class HllSketchMergeAggregatorFactory extends AggregatorFactory
 
     this.lgk = lgk == null ? DEFAULT_MAX_LGK : lgk;
     this.isInputHllSketch = isInputHllSketch == null ? false : isInputHllSketch.booleanValue();
-    this.cacheId = HLL_SKETCH_CACHE_TYPE_ID;
+    this.cacheId = AggregatorUtil.HLL_SKETCH_CACHE_TYPE_ID;
   }
 
   /**
-   * Create factory for combining get output of HllSketchMergeAggregatorFactory
+   * Create factory for combining of HllSketchMergeAggregatorFactory
    * Since we don't alternate the type, the same factory is used. (HllSketchHolder)
    *
    * @return
