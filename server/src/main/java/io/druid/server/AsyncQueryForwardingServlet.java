@@ -22,11 +22,13 @@ package io.druid.server;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.jaxrs.smile.SmileMediaTypes;
+import com.google.common.base.Supplier;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
 import io.druid.client.selector.Server;
+import io.druid.common.guava.DSuppliers;
 import io.druid.guice.annotations.Json;
 import io.druid.guice.annotations.Smile;
 import io.druid.guice.http.DruidHttpClientConfig;
@@ -44,6 +46,8 @@ import io.druid.server.log.RequestLogger;
 import io.druid.server.metrics.QueryCountStatsProvider;
 import io.druid.server.router.QueryHostFinder;
 import io.druid.server.router.Router;
+import io.druid.server.router.interpolator.QueryInterpolator;
+import io.druid.server.router.setup.QueryProxyBehaviorConfig;
 import io.druid.server.security.AuthConfig;
 import org.apache.http.client.utils.URIBuilder;
 import org.eclipse.jetty.client.HttpClient;
@@ -65,6 +69,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * This class does async query processing and should be merged with QueryResource at some point
@@ -112,10 +117,10 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
   private final ServiceEmitter emitter;
   private final RequestLogger requestLogger;
   private final GenericQueryMetricsFactory queryMetricsFactory;
+  private final Supplier<QueryProxyBehaviorConfig> proxyBehaviorConfigRef;
 
   private HttpClient broadcastClient;
 
-  @Inject
   public AsyncQueryForwardingServlet(
       QueryToolChestWarehouse warehouse,
       @Json ObjectMapper jsonMapper,
@@ -137,6 +142,33 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     this.emitter = emitter;
     this.requestLogger = requestLogger;
     this.queryMetricsFactory = queryMetricsFactory;
+    this.proxyBehaviorConfigRef = DSuppliers.of(new AtomicReference<>(new QueryProxyBehaviorConfig()));
+  }
+
+  @Inject
+  public AsyncQueryForwardingServlet(
+      QueryToolChestWarehouse warehouse,
+      @Json ObjectMapper jsonMapper,
+      @Smile ObjectMapper smileMapper,
+      QueryHostFinder hostFinder,
+      @Router Provider<HttpClient> httpClientProvider,
+      @Router DruidHttpClientConfig httpClientConfig,
+      ServiceEmitter emitter,
+      RequestLogger requestLogger,
+      GenericQueryMetricsFactory queryMetricsFactory,
+      final Supplier<QueryProxyBehaviorConfig> proxyConfigRef
+  )
+  {
+    this.warehouse = warehouse;
+    this.jsonMapper = jsonMapper;
+    this.smileMapper = smileMapper;
+    this.hostFinder = hostFinder;
+    this.httpClientProvider = httpClientProvider;
+    this.httpClientConfig = httpClientConfig;
+    this.emitter = emitter;
+    this.requestLogger = requestLogger;
+    this.queryMetricsFactory = queryMetricsFactory;
+    this.proxyBehaviorConfigRef = proxyConfigRef;
   }
 
   @Override
@@ -229,6 +261,23 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
       try {
         Query inputQuery = objectMapper.readValue(request.getInputStream(), Query.class);
         if (inputQuery != null) {
+          // check the interpolators
+          for (QueryInterpolator interpolator : proxyBehaviorConfigRef.get().getQueryInterpolators()) {
+            QueryInterpolator.InterpolateResult r = interpolator.runInterpolation(inputQuery);
+            if (!r.queryShouldRun()) {
+              log.warn("Query banned by interpolator: " + interpolator.toString());
+              final String errorMessage = r.getMessage();
+              requestLogger.log(
+                  new RequestLogLine(
+                      DateTimes.nowUtc(),
+                      request.getRemoteAddr(),
+                      inputQuery,
+                      new QueryStats(ImmutableMap.<String, Object>of("success", false, "exception", errorMessage))
+                  )
+              );
+              return;
+            }
+          }          // find the appropriate server
           targetServer = hostFinder.pickServer(inputQuery);
           if (inputQuery.getId() == null) {
             inputQuery = inputQuery.withId(UUID.randomUUID().toString());

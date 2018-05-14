@@ -26,6 +26,7 @@ import com.google.inject.Module;
 import com.google.inject.Provides;
 import com.google.inject.TypeLiteral;
 import com.google.inject.name.Names;
+import io.druid.guice.JacksonConfigProvider;
 import io.druid.java.util.http.client.HttpClient;
 import io.airlift.airline.Command;
 import io.druid.curator.discovery.DiscoveryModule;
@@ -58,6 +59,7 @@ import io.druid.server.router.TieredBrokerConfig;
 import io.druid.server.router.TieredBrokerHostSelector;
 import io.druid.server.router.TieredBrokerSelectorStrategiesProvider;
 import io.druid.server.router.TieredBrokerSelectorStrategy;
+import io.druid.server.router.setup.QueryProxyBehaviorConfig;
 import org.eclipse.jetty.server.Server;
 
 import java.util.List;
@@ -123,6 +125,9 @@ public class CliRouter extends ServerRunnable
                     ImmutableList.of()
                 )
             ).in(LazySingleton.class);
+
+            JacksonConfigProvider.bind(binder, QueryProxyBehaviorConfig.CONFIG_KEY, QueryProxyBehaviorConfig.class,
+                new QueryProxyBehaviorConfig());
             LifecycleModule.registerKey(binder, Key.get(DiscoverySideEffectsProvider.Child.class));
           }
 
