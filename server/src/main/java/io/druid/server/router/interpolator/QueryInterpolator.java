@@ -30,7 +30,7 @@ import io.druid.query.Query;
 })
 public interface QueryInterpolator
 {
-  InterpolateResult INTERPOLATE_RESULT_OK = new InterpolateResult(false, false, null);
+  InterpolateResult INTERPOLATE_RESULT_OK = new InterpolateResult(true, false, null);
   InterpolateResult runInterpolation(Query query);
 
   class InterpolateResult

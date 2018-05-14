@@ -58,9 +58,12 @@ public abstract class BlackWhiteListQueryInterpolator implements QueryInterpolat
 
   public boolean shouldApply(String datasource)
   {
+    // in blacklist
     if ((blacklist != null) && blacklist.contains(datasource)) {
       return false;
     }
+
+    // in blacklist
     if ((whitelist == null) || (whitelist.contains(datasource))) {
       return true;
     }

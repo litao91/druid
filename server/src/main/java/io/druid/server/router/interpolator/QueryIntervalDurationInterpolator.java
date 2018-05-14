@@ -36,11 +36,11 @@ public class QueryIntervalDurationInterpolator extends BlackWhiteListQueryInterp
   public QueryIntervalDurationInterpolator(
       @JsonProperty("whitelist") List<String> whitelist,
       @JsonProperty("blacklist") List<String> blacklist,
-      @JsonProperty("maxDurationMillis") long durationMillis
+      @JsonProperty("maxDurationMillis") long maxDurationMillis
   )
   {
     super(whitelist, blacklist);
-    this.maxDuration = Duration.millis(durationMillis);
+    this.maxDuration = Duration.millis(maxDurationMillis);
   }
 
   @JsonProperty("maxDurationMillis")
@@ -59,7 +59,7 @@ public class QueryIntervalDurationInterpolator extends BlackWhiteListQueryInterp
     List<Interval> intervals = query.getIntervals();
     Duration totalDuration = Duration.millis(0);
     for (Interval i: intervals) {
-      totalDuration.plus(i.toDuration());
+      totalDuration = totalDuration.plus(i.toDuration());
     }
     if (totalDuration.isLongerThan(this.maxDuration)) {
       return new QueryInterpolator.InterpolateResult(false, false,

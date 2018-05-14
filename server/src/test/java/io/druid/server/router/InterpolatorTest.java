@@ -21,6 +21,8 @@ package io.druid.server.router;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.druid.jackson.DefaultObjectMapper;
+import io.druid.query.Query;
+import io.druid.segment.TestHelper;
 import io.druid.server.router.interpolator.BlackWhiteListQueryInterpolator;
 import io.druid.server.router.interpolator.QueryInterpolator;
 import io.druid.server.router.interpolator.QueryIntervalDurationInterpolator;
@@ -28,6 +30,7 @@ import com.google.common.collect.ImmutableList;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.io.IOException;
 import java.util.List;
 
 public class InterpolatorTest
@@ -70,6 +73,47 @@ public class InterpolatorTest
     );
     Assert.assertTrue(interpolator2.shouldApply("b"));
     Assert.assertFalse(interpolator2.shouldApply("f"));
+  }
+
+  @Test
+  public void testQueryIntervalDurationInterpolator() throws IOException
+  {
+    String queryStr = "{\n" +
+        "    \"aggregations\": [\n" +
+        "        {\n" +
+        "            \"fieldName\": \"count\", \n" +
+        "            \"type\": \"longSum\", \n" +
+        "            \"name\": \"count\"\n" +
+        "        }\n" +
+        "    ], \n" +
+        "    \"intervals\": [\n" +
+        "        \"2018-02-23T00:00:00/2018-02-24T00:00:00\"\n" +
+        "    ], \n" +
+        "    \"dataSource\": \"audience_stat_gender\", \n" +
+        "    \"context\": {\n" +
+        "        \"timeout\": 25000\n" +
+        "    }, \n" +
+        "    \"granularity\": \"all\", \n" +
+        "    \"queryType\": \"groupBy\"\n" +
+        "}";
+    ObjectMapper mapper = TestHelper.makeJsonMapper();
+    Query q = mapper.readValue(queryStr, Query.class);
+    QueryIntervalDurationInterpolator interpolator = new QueryIntervalDurationInterpolator(
+        ImmutableList.of(),
+        ImmutableList.of(),
+        100
+    );
+    QueryInterpolator.InterpolateResult r = interpolator.runInterpolation(q);
+    Assert.assertFalse(r.queryShouldRun());
+
+    interpolator = new QueryIntervalDurationInterpolator(
+        ImmutableList.of(),
+        ImmutableList.of(),
+        86500000
+    );
+
+    r = interpolator.runInterpolation(q);
+    Assert.assertTrue(r.queryShouldRun());
   }
 
   @Test
