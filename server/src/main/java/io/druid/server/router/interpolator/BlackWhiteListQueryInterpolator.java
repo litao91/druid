@@ -29,7 +29,7 @@ import java.util.Set;
 /**
  * It works like follows
  * If the whitelist is null, everything is in whitelist.
- * If the blacklist is null, assume that the blocklist is empty
+ * If the blacklist is null, assume that the blacklist is empty
  *
  * We check the rules in the following order
  * 1. If it's in blacklist, don't apply the interpolator

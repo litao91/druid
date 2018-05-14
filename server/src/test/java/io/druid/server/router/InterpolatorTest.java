@@ -21,6 +21,7 @@ package io.druid.server.router;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.druid.jackson.DefaultObjectMapper;
+import io.druid.server.router.interpolator.BlackWhiteListQueryInterpolator;
 import io.druid.server.router.interpolator.QueryInterpolator;
 import io.druid.server.router.interpolator.QueryIntervalDurationInterpolator;
 import com.google.common.collect.ImmutableList;
@@ -44,6 +45,31 @@ public class InterpolatorTest
 
     QueryIntervalDurationInterpolator deserialized = mapper.reader(QueryInterpolator.class).readValue(serialized);
     Assert.assertEquals(interpolator, deserialized);
+
+    BlackWhiteListQueryInterpolator bwInterpolator = (BlackWhiteListQueryInterpolator) interpolator;
+    Assert.assertTrue(bwInterpolator.shouldApply("a"));
+    Assert.assertFalse(bwInterpolator.shouldApply("b"));
+    Assert.assertFalse(bwInterpolator.shouldApply("f"));
+  }
+
+  @Test
+  public void testEmpytBWList() throws Exception
+  {
+    QueryIntervalDurationInterpolator interpolator = new QueryIntervalDurationInterpolator(
+        ImmutableList.of(),
+        ImmutableList.of("b", "c", "d", "e"),
+        100
+    );
+    Assert.assertTrue(interpolator.shouldApply("f"));
+    Assert.assertFalse(interpolator.shouldApply("c"));
+
+    QueryIntervalDurationInterpolator interpolator2 = new QueryIntervalDurationInterpolator(
+        ImmutableList.of("b", "c", "d", "e"),
+        ImmutableList.of(),
+        100
+    );
+    Assert.assertTrue(interpolator2.shouldApply("b"));
+    Assert.assertFalse(interpolator2.shouldApply("f"));
   }
 
   @Test
@@ -70,5 +96,6 @@ public class InterpolatorTest
       Assert.assertEquals(expected.get(i), deserialized.get(i));
     }
   }
+
 
 }
