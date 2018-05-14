@@ -20,6 +20,7 @@ package io.druid.server.router.interpolator;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.google.common.annotations.VisibleForTesting;
 import io.druid.java.util.common.StringUtils;
 import io.druid.query.Query;
 import org.joda.time.Duration;
@@ -27,11 +28,12 @@ import org.joda.time.Interval;
 
 import java.util.List;
 
-public class QueryIntervalInterpolator extends BlackWhiteListInterpolator
+public class QueryIntervalDurationInterpolator extends BlackWhiteListQueryInterpolator
 {
+  @VisibleForTesting
   private final Duration maxDuration;
   @JsonCreator
-  public QueryIntervalInterpolator(
+  public QueryIntervalDurationInterpolator(
       @JsonProperty("whitelist") List<String> whitelist,
       @JsonProperty("blacklist") List<String> blacklist,
       @JsonProperty("maxDurationMillis") long durationMillis
@@ -39,6 +41,12 @@ public class QueryIntervalInterpolator extends BlackWhiteListInterpolator
   {
     super(whitelist, blacklist);
     this.maxDuration = Duration.millis(durationMillis);
+  }
+
+  @JsonProperty("maxDurationMillis")
+  public long getMaxDuration()
+  {
+    return maxDuration.getMillis();
   }
 
   @Override
@@ -61,5 +69,17 @@ public class QueryIntervalInterpolator extends BlackWhiteListInterpolator
     } else {
       return QueryInterpolator.INTERPOLATE_RESULT_OK;
     }
+  }
+
+  @Override
+  public boolean equals(Object other)
+  {
+    if (!super.equals(other)) {
+      return false;
+    }
+    if (!(other instanceof QueryIntervalDurationInterpolator)) {
+      return false;
+    }
+    return this.getMaxDuration() == ((QueryIntervalDurationInterpolator) other).getMaxDuration();
   }
 }

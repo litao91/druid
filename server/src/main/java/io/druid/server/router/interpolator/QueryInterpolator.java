@@ -19,11 +19,15 @@
 
 package io.druid.server.router.interpolator;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import io.druid.query.Query;
-import org.codehaus.jackson.annotate.JsonProperty;
-import org.codehaus.jackson.annotate.JsonTypeInfo;
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+@JsonSubTypes(value = {
+    @JsonSubTypes.Type(name = "duration", value = QueryIntervalDurationInterpolator.class)
+})
 public interface QueryInterpolator
 {
   InterpolateResult INTERPOLATE_RESULT_OK = new InterpolateResult(false, false, null);

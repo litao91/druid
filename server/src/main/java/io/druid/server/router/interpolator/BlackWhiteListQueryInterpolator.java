@@ -36,12 +36,12 @@ import java.util.Set;
  * 2. If it's in whitelist, apply the interpolator
  * 3. Not in blacklist or whitelist -> don't apply
  */
-public abstract class BlackWhiteListInterpolator implements QueryInterpolator
+public abstract class BlackWhiteListQueryInterpolator implements QueryInterpolator
 {
   private final Set<String> whitelist;
   private final Set<String> blacklist;
 
-  public BlackWhiteListInterpolator(List<String> whitelist, List<String> blacklist)
+  public BlackWhiteListQueryInterpolator(List<String> whitelist, List<String> blacklist)
   {
     if (whitelist == null || whitelist.isEmpty()) {
       this.whitelist = null;
@@ -83,5 +83,39 @@ public abstract class BlackWhiteListInterpolator implements QueryInterpolator
   public List<String> getWhitelist()
   {
     return new ArrayList<>(whitelist);
+  }
+
+  @Override
+  public boolean equals(Object other)
+  {
+    if (this == other) {
+      return true;
+    }
+    if (other == null) {
+      return false;
+    }
+    if (!(other instanceof BlackWhiteListQueryInterpolator)) {
+      return false;
+    }
+    BlackWhiteListQueryInterpolator that = (BlackWhiteListQueryInterpolator) other;
+    if (that.blacklist.size() != this.blacklist.size()) {
+      return false;
+    }
+    for (String i: this.blacklist) {
+      if (!that.blacklist.contains(i)) {
+        return false;
+      }
+    }
+
+    if (that.whitelist.size() != this.whitelist.size()) {
+      return false;
+    }
+
+    for (String i: this.whitelist) {
+      if (!that.whitelist.contains(i)) {
+        return false;
+      }
+    }
+    return true;
   }
 }
