@@ -24,6 +24,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Throwables;
 import com.google.inject.Inject;
+import com.google.inject.Injector;
 import io.druid.audit.AuditEntry;
 import io.druid.audit.AuditInfo;
 import io.druid.audit.AuditManager;
@@ -38,17 +39,20 @@ public class JacksonConfigManager
   private final ConfigManager configManager;
   private final ObjectMapper jsonMapper;
   private final AuditManager auditManager;
+  private final Injector injector;
 
   @Inject
   public JacksonConfigManager(
       ConfigManager configManager,
       ObjectMapper jsonMapper,
-      AuditManager auditManager
+      AuditManager auditManager,
+      Injector injector
   )
   {
     this.configManager = configManager;
     this.jsonMapper = jsonMapper;
     this.auditManager = auditManager;
+    this.injector = injector;
   }
 
   public <T> AtomicReference<T> watch(String key, Class<? extends T> clazz)
@@ -116,7 +120,9 @@ public class JacksonConfigManager
         }
 
         try {
-          return jsonMapper.readValue(bytes, clazz);
+          T obj = jsonMapper.readValue(bytes, clazz);
+          injector.injectMembers(obj);
+          return obj;
         }
         catch (IOException e) {
           throw Throwables.propagate(e);
@@ -159,7 +165,9 @@ public class JacksonConfigManager
         }
 
         try {
-          return jsonMapper.readValue(bytes, clazz);
+          T obj = jsonMapper.readValue(bytes, clazz);
+          injector.injectMembers(obj);
+          return obj;
         }
         catch (IOException e) {
           throw Throwables.propagate(e);
