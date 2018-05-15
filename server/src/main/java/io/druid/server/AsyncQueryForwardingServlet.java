@@ -260,6 +260,9 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
       // query request
       try {
         Query inputQuery = objectMapper.readValue(request.getInputStream(), Query.class);
+        if (inputQuery.getId() == null) {
+          inputQuery = inputQuery.withId(UUID.randomUUID().toString());
+        }
         if (inputQuery != null) {
           // check the interpolators
           for (QueryInterpolator interpolator : proxyBehaviorConfigRef.get().getQueryInterpolators()) {
@@ -275,13 +278,16 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
                       new QueryStats(ImmutableMap.<String, Object>of("success", false, "exception", errorMessage))
                   )
               );
+              response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+              response.setContentType(MediaType.APPLICATION_JSON);
+              objectMapper.writeValue(
+                  response.getOutputStream(),
+                  ImmutableMap.of("error", errorMessage)
+              );
               return;
             }
           }          // find the appropriate server
           targetServer = hostFinder.pickServer(inputQuery);
-          if (inputQuery.getId() == null) {
-            inputQuery = inputQuery.withId(UUID.randomUUID().toString());
-          }
         } else {
           targetServer = hostFinder.pickDefaultServer();
         }
