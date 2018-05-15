@@ -27,6 +27,7 @@ import io.druid.server.router.interpolator.BlackWhiteListQueryInterpolator;
 import io.druid.server.router.interpolator.QueryInterpolator;
 import io.druid.server.router.interpolator.QueryIntervalDurationInterpolator;
 import com.google.common.collect.ImmutableList;
+import io.druid.server.router.setup.QueryProxyBehaviorConfig;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -139,6 +140,20 @@ public class InterpolatorTest
     for (int i = 0; i < expected.size(); ++i) {
       Assert.assertEquals(expected.get(i), deserialized.get(i));
     }
+  }
+
+  @Test
+  public void testSerdeQueryProxyBehaviorConfig() throws Exception
+  {
+    QueryProxyBehaviorConfig config = new QueryProxyBehaviorConfig(ImmutableList.of(
+        new QueryIntervalDurationInterpolator(
+            ImmutableList.of(),
+            ImmutableList.of(),
+            7776000000L)));
+    ObjectMapper mapper = TestHelper.makeJsonMapper();
+    String serialized = mapper.writeValueAsString(config);
+    QueryProxyBehaviorConfig deserialized = mapper.reader(QueryProxyBehaviorConfig.class).readValue(serialized);
+    Assert.assertEquals(config.getQueryInterpolators().get(0), deserialized.getQueryInterpolators().get(0));
   }
 
 

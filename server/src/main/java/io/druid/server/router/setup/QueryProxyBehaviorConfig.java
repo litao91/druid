@@ -18,9 +18,9 @@
  */
 package io.druid.server.router.setup;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.druid.server.router.interpolator.QueryInterpolator;
 import org.codehaus.jackson.annotate.JsonCreator;
-import org.codehaus.jackson.annotate.JsonProperty;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -37,13 +37,13 @@ public class QueryProxyBehaviorConfig
 
   @JsonCreator
   public QueryProxyBehaviorConfig(
-      List<QueryInterpolator> queryInterpolators
+      @JsonProperty("interpolators") List<QueryInterpolator> queryInterpolators
   )
   {
     this.queryInterpolators = queryInterpolators;
   }
 
-  @JsonProperty
+  @JsonProperty("interpolators")
   public List<QueryInterpolator> getQueryInterpolators()
   {
     return this.queryInterpolators;

@@ -30,7 +30,7 @@ import java.util.Set;
  * It works like follows
  * If the whitelist is null, everything is in whitelist.
  * If the blacklist is null, assume that the blacklist is empty
- *
+ * <p>
  * We check the rules in the following order
  * 1. If it's in blacklist, don't apply the interpolator
  * 2. If it's in whitelist, apply the interpolator
@@ -44,13 +44,13 @@ public abstract class BlackWhiteListQueryInterpolator implements QueryInterpolat
   public BlackWhiteListQueryInterpolator(List<String> whitelist, List<String> blacklist)
   {
     if (whitelist == null || whitelist.isEmpty()) {
-      this.whitelist = null;
+      this.whitelist = new HashSet<>();
     } else {
       this.whitelist = new HashSet<>(whitelist);
     }
 
     if (blacklist == null || blacklist.isEmpty()) {
-      this.blacklist = null;
+      this.blacklist = new HashSet<>();
     } else {
       this.blacklist = new HashSet<>(blacklist);
     }
@@ -59,12 +59,12 @@ public abstract class BlackWhiteListQueryInterpolator implements QueryInterpolat
   public boolean shouldApply(String datasource)
   {
     // in blacklist
-    if ((blacklist != null) && blacklist.contains(datasource)) {
+    if ((!blacklist.isEmpty()) && blacklist.contains(datasource)) {
       return false;
     }
 
     // in blacklist
-    if ((whitelist == null) || (whitelist.contains(datasource))) {
+    if (whitelist.isEmpty() || (whitelist.contains(datasource))) {
       return true;
     }
     return false;
@@ -79,13 +79,21 @@ public abstract class BlackWhiteListQueryInterpolator implements QueryInterpolat
   @JsonProperty("blacklist")
   public List<String> getBlacklist()
   {
-    return new ArrayList<>(blacklist);
+    if (blacklist != null) {
+      return new ArrayList<>(blacklist);
+    } else {
+      return null;
+    }
   }
 
   @JsonProperty("whitelist")
   public List<String> getWhitelist()
   {
-    return new ArrayList<>(whitelist);
+    if (blacklist != null) {
+      return new ArrayList<>(whitelist);
+    } else {
+      return null;
+    }
   }
 
   @Override
@@ -104,7 +112,7 @@ public abstract class BlackWhiteListQueryInterpolator implements QueryInterpolat
     if (that.blacklist.size() != this.blacklist.size()) {
       return false;
     }
-    for (String i: this.blacklist) {
+    for (String i : this.blacklist) {
       if (!that.blacklist.contains(i)) {
         return false;
       }
@@ -114,7 +122,7 @@ public abstract class BlackWhiteListQueryInterpolator implements QueryInterpolat
       return false;
     }
 
-    for (String i: this.whitelist) {
+    for (String i : this.whitelist) {
       if (!that.whitelist.contains(i)) {
         return false;
       }
