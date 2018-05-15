@@ -19,6 +19,7 @@
 package io.druid.server.router.setup;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.google.common.collect.ImmutableList;
 import io.druid.server.router.interpolator.QueryInterpolator;
 import org.codehaus.jackson.annotate.JsonCreator;
 
@@ -29,23 +30,38 @@ public class QueryProxyBehaviorConfig
 {
   public static String CONFIG_KEY = "router.config";
   private final List<QueryInterpolator> queryInterpolators;
+  private final int queryQueueSize;
+  private static final int DEFAULT_QUERY_QUEUE_SIZE = 1000;
 
   public QueryProxyBehaviorConfig()
   {
-    queryInterpolators = new ArrayList<>();
+    queryInterpolators = ImmutableList.of();
+    queryQueueSize = 1000;
   }
 
   @JsonCreator
   public QueryProxyBehaviorConfig(
-      @JsonProperty("interpolators") List<QueryInterpolator> queryInterpolators
+      @JsonProperty("interpolators") List<QueryInterpolator> queryInterpolators,
+      @JsonProperty("queryQueueSize") int queryQueueSize
   )
   {
     this.queryInterpolators = queryInterpolators;
+    if (queryQueueSize <= 0) {
+      this.queryQueueSize = DEFAULT_QUERY_QUEUE_SIZE;
+    } else {
+      this.queryQueueSize = queryQueueSize;
+    }
   }
 
   @JsonProperty("interpolators")
   public List<QueryInterpolator> getQueryInterpolators()
   {
     return this.queryInterpolators;
+  }
+
+  @JsonProperty("queryQueueSize")
+  public int getQueryQueueSize()
+  {
+    return queryQueueSize;
   }
 }

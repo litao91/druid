@@ -149,7 +149,7 @@ public class InterpolatorTest
         new QueryIntervalDurationInterpolator(
             ImmutableList.of(),
             ImmutableList.of(),
-            7776000000L)));
+            7776000000L)), 0);
     ObjectMapper mapper = TestHelper.makeJsonMapper();
     String serialized = mapper.writeValueAsString(config);
     QueryProxyBehaviorConfig deserialized = mapper.reader(QueryProxyBehaviorConfig.class).readValue(serialized);
