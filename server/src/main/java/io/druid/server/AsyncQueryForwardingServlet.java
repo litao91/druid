@@ -25,6 +25,7 @@ import com.fasterxml.jackson.jaxrs.smile.SmileMediaTypes;
 import com.google.common.base.Supplier;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
 import io.druid.client.selector.Server;
@@ -45,6 +46,7 @@ import io.druid.query.QueryToolChestWarehouse;
 import io.druid.server.log.RequestLogger;
 import io.druid.server.metrics.QueryCountStatsProvider;
 import io.druid.server.router.QueryHostFinder;
+import io.druid.server.router.QueryQueue;
 import io.druid.server.router.Router;
 import io.druid.server.router.interpolator.QueryInterpolator;
 import io.druid.server.router.setup.QueryProxyBehaviorConfig;
@@ -67,6 +69,8 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -118,9 +122,19 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
   private final RequestLogger requestLogger;
   private final GenericQueryMetricsFactory queryMetricsFactory;
   private final Supplier<QueryProxyBehaviorConfig> proxyBehaviorConfigRef;
+  private final QueryQueue queryQueue;
+
+  private final ExecutorService managerExec = Executors.newSingleThreadExecutor(
+      new ThreadFactoryBuilder()
+      .setDaemon(false)
+      .setNameFormat("QueryQueue-Manager").build()
+  );
 
   private HttpClient broadcastClient;
 
+  /**
+   * This is strictly for testing purpose only, never use this contructor
+   */
   public AsyncQueryForwardingServlet(
       QueryToolChestWarehouse warehouse,
       @Json ObjectMapper jsonMapper,
@@ -143,6 +157,7 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     this.requestLogger = requestLogger;
     this.queryMetricsFactory = queryMetricsFactory;
     this.proxyBehaviorConfigRef = DSuppliers.of(new AtomicReference<>(new QueryProxyBehaviorConfig()));
+    this.queryQueue = new QueryQueue(this.proxyBehaviorConfigRef);
   }
 
   @Inject
@@ -169,6 +184,7 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     this.requestLogger = requestLogger;
     this.queryMetricsFactory = queryMetricsFactory;
     this.proxyBehaviorConfigRef = proxyConfigRef;
+    this.queryQueue = new QueryQueue(this.proxyBehaviorConfigRef);
   }
 
   @Override
@@ -185,7 +201,37 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     catch (Exception e) {
       throw new ServletException(e);
     }
+
+    managerExec.submit(
+        () -> {
+          while (true) {
+            try {
+              manageQueries();
+            } catch (InterruptedException e) {
+              log.info("Interrupted exiting!");
+              break;
+            }
+            catch (Exception e) {
+              log.makeAlert(e, "Failed to manage");
+              try {
+                Thread.sleep(this.proxyBehaviorConfigRef.get().getStartDelayMillis());
+              }
+              catch (InterruptedException e2) {
+                log.info("Interrupted exiting");
+                break;
+              }
+            }
+          }
+        });
   }
+
+  private void manageQueries() throws InterruptedException
+  {
+    log.info("Beginning management in %s.", proxyBehaviorConfigRef.get().getStartDelayMillis());
+    while(true) {
+    }
+  }
+
 
   @Override
   public void destroy()

@@ -23,7 +23,6 @@ import com.google.common.collect.ImmutableList;
 import io.druid.server.router.interpolator.QueryInterpolator;
 import org.codehaus.jackson.annotate.JsonCreator;
 
-import java.util.ArrayList;
 import java.util.List;
 
 public class QueryProxyBehaviorConfig
@@ -31,18 +30,23 @@ public class QueryProxyBehaviorConfig
   public static String CONFIG_KEY = "router.config";
   private final List<QueryInterpolator> queryInterpolators;
   private final int queryQueueSize;
+  private final int restartDelayMillis;
+
   private static final int DEFAULT_QUERY_QUEUE_SIZE = 1000;
+  private static final int DEFAULT_START_DELAY_MILLIS = 1000;
 
   public QueryProxyBehaviorConfig()
   {
     queryInterpolators = ImmutableList.of();
-    queryQueueSize = 1000;
+    queryQueueSize = DEFAULT_QUERY_QUEUE_SIZE;
+    restartDelayMillis = DEFAULT_START_DELAY_MILLIS;
   }
 
   @JsonCreator
   public QueryProxyBehaviorConfig(
       @JsonProperty("interpolators") List<QueryInterpolator> queryInterpolators,
-      @JsonProperty("queryQueueSize") int queryQueueSize
+      @JsonProperty("queryQueueSize") int queryQueueSize,
+      @JsonProperty("restartDelayMillis") int restartDelayMillis
   )
   {
     this.queryInterpolators = queryInterpolators;
@@ -50,6 +54,12 @@ public class QueryProxyBehaviorConfig
       this.queryQueueSize = DEFAULT_QUERY_QUEUE_SIZE;
     } else {
       this.queryQueueSize = queryQueueSize;
+    }
+
+    if (restartDelayMillis <= 0) {
+      this.restartDelayMillis = DEFAULT_START_DELAY_MILLIS;
+    } else {
+      this.restartDelayMillis = restartDelayMillis;
     }
   }
 
@@ -64,4 +74,11 @@ public class QueryProxyBehaviorConfig
   {
     return queryQueueSize;
   }
+
+  @JsonProperty("startDelayMillis")
+  public int getStartDelayMillis()
+  {
+    return restartDelayMillis;
+  }
+
 }
