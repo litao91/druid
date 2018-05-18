@@ -23,6 +23,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.annotations.VisibleForTesting;
 import io.druid.java.util.common.StringUtils;
 import io.druid.query.Query;
+import io.druid.server.AsyncQueryForwardingServlet;
 import org.joda.time.Duration;
 import org.joda.time.Interval;
 
@@ -50,7 +51,7 @@ public class QueryIntervalDurationInterpolator extends BlackWhiteListQueryInterp
   }
 
   @Override
-  public InterpolateResult runInterpolation(Query query)
+  public InterpolateResult runInterpolation(Query query, AsyncQueryForwardingServlet servlet)
   {
     if (!shouldApply(query)) {
       return QueryInterpolator.INTERPOLATE_RESULT_OK;

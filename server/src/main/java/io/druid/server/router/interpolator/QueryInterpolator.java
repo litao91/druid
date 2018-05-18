@@ -23,6 +23,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import io.druid.query.Query;
+import io.druid.server.AsyncQueryForwardingServlet;
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
 @JsonSubTypes(value = {
@@ -31,7 +32,7 @@ import io.druid.query.Query;
 public interface QueryInterpolator
 {
   InterpolateResult INTERPOLATE_RESULT_OK = new InterpolateResult(true, false, null);
-  InterpolateResult runInterpolation(Query query);
+  InterpolateResult runInterpolation(Query query, AsyncQueryForwardingServlet servlet);
 
   class InterpolateResult
   {

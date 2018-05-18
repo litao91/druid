@@ -379,7 +379,7 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
         if (inputQuery != null) {
           // check the interpolators
           for (QueryInterpolator interpolator : proxyBehaviorConfigRef.get().getQueryInterpolators()) {
-            QueryInterpolator.InterpolateResult r = interpolator.runInterpolation(inputQuery);
+            QueryInterpolator.InterpolateResult r = interpolator.runInterpolation(inputQuery, this);
             if (!r.queryShouldRun()) {
               logger.warn("Query banned by interpolator: " + interpolator.toString());
               final String errorMessage = r.getMessage();

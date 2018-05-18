@@ -104,7 +104,7 @@ public class InterpolatorTest
         ImmutableList.of(),
         100
     );
-    QueryInterpolator.InterpolateResult r = interpolator.runInterpolation(q);
+    QueryInterpolator.InterpolateResult r = interpolator.runInterpolation(q, null);
     Assert.assertFalse(r.queryShouldRun());
 
     interpolator = new QueryIntervalDurationInterpolator(
@@ -113,7 +113,7 @@ public class InterpolatorTest
         86500000
     );
 
-    r = interpolator.runInterpolation(q);
+    r = interpolator.runInterpolation(q, null);
     Assert.assertTrue(r.queryShouldRun());
   }
 
@@ -154,10 +154,14 @@ public class InterpolatorTest
             ImmutableList.of(),
             ImmutableList.of(),
             7776000000L
-        )), 0, 0, 0);
+        )), 1, 2, 3);
     ObjectMapper mapper = TestHelper.makeJsonMapper();
     String serialized = mapper.writeValueAsString(config);
     QueryProxyBehaviorConfig deserialized = mapper.reader(QueryProxyBehaviorConfig.class).readValue(serialized);
     Assert.assertEquals(config.getQueryInterpolators().get(0), deserialized.getQueryInterpolators().get(0));
+
+    Assert.assertEquals(1, deserialized.getQueryQueueSize());
+    Assert.assertEquals(2, deserialized.getStartDelayMillis());
+    Assert.assertEquals(3, deserialized.getMaxRunningQueries());
   }
 }
