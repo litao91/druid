@@ -25,6 +25,8 @@ import com.fasterxml.jackson.jaxrs.smile.SmileMediaTypes;
 import com.google.common.base.Supplier;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Maps;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
 import io.druid.client.selector.Server;
@@ -34,9 +36,12 @@ import io.druid.guice.annotations.Smile;
 import io.druid.guice.http.DruidHttpClientConfig;
 import io.druid.java.util.common.DateTimes;
 import io.druid.java.util.common.IAE;
+import io.druid.java.util.common.StringUtils;
 import io.druid.java.util.common.jackson.JacksonUtils;
+import io.druid.java.util.common.logger.Logger;
 import io.druid.java.util.emitter.EmittingLogger;
 import io.druid.java.util.emitter.service.ServiceEmitter;
+import io.druid.metadata.EntryExistsException;
 import io.druid.query.DruidMetrics;
 import io.druid.query.GenericQueryMetricsFactory;
 import io.druid.query.Query;
@@ -45,6 +50,7 @@ import io.druid.query.QueryToolChestWarehouse;
 import io.druid.server.log.RequestLogger;
 import io.druid.server.metrics.QueryCountStatsProvider;
 import io.druid.server.router.QueryHostFinder;
+import io.druid.server.router.QueryQueue;
 import io.druid.server.router.Router;
 import io.druid.server.router.interpolator.QueryInterpolator;
 import io.druid.server.router.setup.QueryProxyBehaviorConfig;
@@ -57,19 +63,45 @@ import org.eclipse.jetty.client.api.Result;
 import org.eclipse.jetty.client.util.BytesContentProvider;
 import org.eclipse.jetty.http.HttpMethod;
 import org.eclipse.jetty.proxy.AsyncProxyServlet;
+import org.eclipse.jetty.util.Callback;
+import org.eclipse.jetty.server.HttpOutput;
+import org.joda.time.DateTime;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.servlet.AsyncContext;
+import javax.servlet.DispatcherType;
+import javax.servlet.RequestDispatcher;
+import javax.servlet.ServletContext;
+import javax.servlet.ServletInputStream;
+import javax.servlet.ServletRequest;
+import javax.servlet.ServletResponse;
+import javax.servlet.http.Cookie;
+import javax.servlet.http.HttpSession;
+import javax.servlet.http.HttpUpgradeHandler;
+import javax.servlet.http.Part;
 import javax.ws.rs.core.MediaType;
 import java.io.IOException;
+import java.io.BufferedReader;
+import java.io.UnsupportedEncodingException;
+import java.nio.ByteBuffer;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.Condition;
+import java.util.Enumeration;
+import java.util.Locale;
+import java.util.Collection;
+import java.security.Principal;
+
 
 /**
  * This class does async query processing and should be merged with QueryResource at some point
@@ -77,6 +109,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements QueryCountStatsProvider
 {
   private static final EmittingLogger log = new EmittingLogger(AsyncQueryForwardingServlet.class);
+  private static final Logger logger = new Logger(AsyncQueryForwardingServlet.class);
   @Deprecated // use SmileMediaTypes.APPLICATION_JACKSON_SMILE
   private static final String APPLICATION_SMILE = "application/smile";
 
@@ -118,9 +151,24 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
   private final RequestLogger requestLogger;
   private final GenericQueryMetricsFactory queryMetricsFactory;
   private final Supplier<QueryProxyBehaviorConfig> proxyBehaviorConfigRef;
+  private final QueryQueue queryQueue;
+  // from query id to timeout
+  private final Map<String, DateTime> runningQueries = Maps.newHashMap();
+  private final ReentrantLock runningQueryLock;
+  private final Condition notFull;
+
+
+  private final ExecutorService managerExec = Executors.newSingleThreadExecutor(
+      new ThreadFactoryBuilder()
+          .setDaemon(false)
+          .setNameFormat("QueryQueue-Manager").build()
+  );
 
   private HttpClient broadcastClient;
 
+  /**
+   * This is strictly for testing purpose only, never use this contructor
+   */
   public AsyncQueryForwardingServlet(
       QueryToolChestWarehouse warehouse,
       @Json ObjectMapper jsonMapper,
@@ -143,6 +191,9 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     this.requestLogger = requestLogger;
     this.queryMetricsFactory = queryMetricsFactory;
     this.proxyBehaviorConfigRef = DSuppliers.of(new AtomicReference<>(new QueryProxyBehaviorConfig()));
+    this.queryQueue = new QueryQueue(this.proxyBehaviorConfigRef);
+    runningQueryLock = new ReentrantLock();
+    notFull = runningQueryLock.newCondition();
   }
 
   @Inject
@@ -169,6 +220,9 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     this.requestLogger = requestLogger;
     this.queryMetricsFactory = queryMetricsFactory;
     this.proxyBehaviorConfigRef = proxyConfigRef;
+    this.queryQueue = new QueryQueue(this.proxyBehaviorConfigRef);
+    runningQueryLock = new ReentrantLock();
+    notFull = runningQueryLock.newCondition();
   }
 
   @Override
@@ -185,6 +239,65 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     catch (Exception e) {
       throw new ServletException(e);
     }
+
+    managerExec.submit(
+        () -> {
+          while (true) {
+            try {
+              manageQueries();
+            }
+            catch (InterruptedException e) {
+              logger.info("Interrupted exiting!");
+              break;
+            }
+            catch (Exception e) {
+              log.makeAlert(e, "Failed to manage");
+              try {
+                Thread.sleep(this.proxyBehaviorConfigRef.get().getStartDelayMillis());
+              }
+              catch (InterruptedException e2) {
+                logger.info("Interrupted exiting");
+                break;
+              }
+            }
+          }
+        });
+  }
+
+  private void manageQueries() throws InterruptedException
+  {
+    logger.info("Beginning management in %s.", proxyBehaviorConfigRef.get().getStartDelayMillis());
+    while (true) {
+      final QueryQueue.QueryStuff queryStuff = queryQueue.pollNextToRun();
+      logger.debug("polled next query: " + queryStuff.getQuery().getId());
+
+      runningQueryLock.lock();
+      try {
+        while (runningQueries.size() >= proxyBehaviorConfigRef.get().getMaxRunningQueries()) {
+          logger.info(StringUtils.format(
+                "runningQuerySize(%d) >= maxRunningQueries(%d), wait for query to complete",
+                runningQueries.size(), proxyBehaviorConfigRef.get().getMaxRunningQueries()
+                ));
+
+          notFull.await();
+        }
+        DateTime now = DateTimes.nowUtc();
+        long timeout = 300000;
+        if (queryStuff.getQuery().getContext().containsKey("timeout")) {
+          timeout = (Long) queryStuff.getQuery().getContext().get("timeout");
+        }
+        logger.debug("Asking query %s to run", queryStuff.getQuery().getId());
+        runningQueries.put(queryStuff.getQuery().getId(), now.plus(timeout));
+        doService(new QueryForwardingRequestWrapper(queryStuff.getRequest()), queryStuff.getResponse());
+      }
+      catch (Exception e) {
+        logger.error(e, "do Service error for query %s", queryStuff.getQuery().getId());
+        runningQueries.remove(queryStuff.getQuery().getId());
+      }
+      finally {
+        runningQueryLock.unlock();
+      }
+    }
   }
 
   @Override
@@ -195,7 +308,7 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
       broadcastClient.stop();
     }
     catch (Exception e) {
-      log.warn(e, "Error stopping servlet");
+      logger.warn(e, "Error stopping servlet");
     }
   }
 
@@ -238,7 +351,7 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
           // issue async requests
           Response.CompleteListener completeListener = result -> {
             if (result.isFailed()) {
-              log.warn(
+              logger.warn(
                   result.getFailure(),
                   "Failed to forward cancellation request to [%s]",
                   server.getHost()
@@ -268,14 +381,14 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
           for (QueryInterpolator interpolator : proxyBehaviorConfigRef.get().getQueryInterpolators()) {
             QueryInterpolator.InterpolateResult r = interpolator.runInterpolation(inputQuery);
             if (!r.queryShouldRun()) {
-              log.warn("Query banned by interpolator: " + interpolator.toString());
+              logger.warn("Query banned by interpolator: " + interpolator.toString());
               final String errorMessage = r.getMessage();
               requestLogger.log(
                   new RequestLogLine(
                       DateTimes.nowUtc(),
                       request.getRemoteAddr(),
                       inputQuery,
-                      new QueryStats(ImmutableMap.<String, Object>of("success", false, "exception", errorMessage))
+                      new QueryStats(ImmutableMap.of("success", false, "exception", errorMessage))
                   )
               );
               response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
@@ -294,7 +407,7 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
         request.setAttribute(QUERY_ATTRIBUTE, inputQuery);
       }
       catch (IOException e) {
-        log.warn(e, "Exception parsing query");
+        logger.warn(e, "Exception parsing query");
         final String errorMessage = e.getMessage() == null ? "no error message" : e.getMessage();
         requestLogger.log(
             new RequestLogLine(
@@ -324,7 +437,32 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     request.setAttribute(HOST_ATTRIBUTE, targetServer.getHost());
     request.setAttribute(SCHEME_ATTRIBUTE, targetServer.getScheme());
 
-    doService(request, response);
+    if (isQueryEndpoint && HttpMethod.POST.is(method)) {
+      try {
+        Query query = (Query) request.getAttribute(QUERY_ATTRIBUTE);
+        logger.info("Adding query: %s to query queue, request: %s, response: %s", query.getId(), request.toString(), response.toString());
+        if (!queryQueue.add(query, request, response)) {
+          response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+          response.setContentType(MediaType.APPLICATION_JSON);
+          objectMapper.writeValue(
+              response.getOutputStream(),
+              ImmutableMap.of("error", "Query queue full, please try again later")
+          );
+        }
+      }
+      catch (EntryExistsException e) {
+        response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+        response.setContentType(MediaType.APPLICATION_JSON);
+        final String errorMessage = e.getMessage() == null ? "no error message" : e.getMessage();
+        objectMapper.writeValue(
+            response.getOutputStream(),
+            ImmutableMap.of("error", errorMessage)
+        );
+      }
+    } else {
+      // run service directly
+      doService(request, response);
+    }
   }
 
   protected void doService(
@@ -382,7 +520,7 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
   {
     final Query query = (Query) request.getAttribute(QUERY_ATTRIBUTE);
     if (query != null) {
-      return newMetricsEmittingProxyResponseListener(request, response, query, System.nanoTime());
+      return newQueryForwardingProxyResponseListener(request, response, query, System.nanoTime());
     } else {
       return super.newProxyResponseListener(request, response);
     }
@@ -415,7 +553,7 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
           .build();
     }
     catch (URISyntaxException e) {
-      log.error(e, "Unable to rewrite URI [%s]", e.getMessage());
+      logger.error(e, "Unable to rewrite URI [%s]", e.getMessage());
       throw Throwables.propagate(e);
     }
   }
@@ -435,14 +573,14 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     return client;
   }
 
-  private Response.Listener newMetricsEmittingProxyResponseListener(
+  private Response.Listener newQueryForwardingProxyResponseListener(
       HttpServletRequest request,
       HttpServletResponse response,
       Query query,
       long startNs
   )
   {
-    return new MetricsEmittingProxyResponseListener(request, response, query, startNs);
+    return new QueryForwardingProxyResponseListener(request, response, query, startNs);
   }
 
   @Override
@@ -476,14 +614,14 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     return (String) connectionIdObj;
   }
 
-  private class MetricsEmittingProxyResponseListener extends ProxyResponseListener
+  private class QueryForwardingProxyResponseListener extends ProxyResponseListener
   {
     private final HttpServletRequest req;
     private final HttpServletResponse res;
     private final Query query;
     private final long startNs;
 
-    public MetricsEmittingProxyResponseListener(
+    public QueryForwardingProxyResponseListener(
         HttpServletRequest request,
         HttpServletResponse response,
         Query query,
@@ -499,8 +637,32 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     }
 
     @Override
+    public void onContent(final Response proxyResponse, ByteBuffer content, final Callback callback)
+    {
+      logger.info("Query %s content", query.getId());
+      runningQueryLock.lock();
+      try {
+        runningQueries.remove(query.getId());
+        notFull.signal();
+      }
+      finally {
+        runningQueryLock.unlock();
+      }
+
+      try {
+        ((HttpOutput) this.res.getOutputStream()).reopen();
+      }
+      catch (Exception e) {
+        logger.error(e, "error");
+      }
+      logger.info("Query %s removed from running queries", query.getId());
+      super.onContent(proxyResponse, content, callback);
+    }
+
+    @Override
     public void onComplete(Result result)
     {
+
       final long requestTimeNs = System.nanoTime() - startNs;
       try {
         boolean success = result.isSucceeded();
@@ -516,7 +678,7 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
                 req.getRemoteAddr(),
                 query,
                 new QueryStats(
-                    ImmutableMap.<String, Object>of(
+                    ImmutableMap.of(
                         "query/time",
                         TimeUnit.NANOSECONDS.toMillis(requestTimeNs),
                         "success",
@@ -530,7 +692,7 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
 
       }
       catch (Exception e) {
-        log.error(e, "Unable to log query [%s]!", query);
+        logger.error(e, "Unable to log query [%s]!", query);
       }
 
       super.onComplete(result);
@@ -560,7 +722,7 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
         );
       }
       catch (IOException logError) {
-        log.error(logError, "Unable to log query [%s]!", query);
+        logger.error(logError, "Unable to log query [%s]!", query);
       }
 
       log.makeAlert(failure, "Exception handling request")
@@ -582,6 +744,443 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
       );
       queryMetrics.success(success);
       queryMetrics.reportQueryTime(requestTimeNs).emit(emitter);
+    }
+  }
+
+  private static class QueryForwardingRequestWrapper implements HttpServletRequest
+  {
+    private final HttpServletRequest realRequest;
+    private boolean asyncStarted = false;
+
+    public QueryForwardingRequestWrapper(HttpServletRequest realRequest)
+    {
+      this.realRequest = realRequest;
+    }
+    @Override
+    public String getAuthType()
+    {
+      return realRequest.getAuthType();
+    }
+
+    @Override
+    public Cookie[] getCookies()
+    {
+      return realRequest.getCookies();
+    }
+
+    @Override
+    public long getDateHeader(String name)
+    {
+      return realRequest.getDateHeader(name);
+    }
+
+    @Override
+    public String getHeader(String name)
+    {
+      return realRequest.getHeader(name);
+    }
+
+    @Override
+    public Enumeration<String> getHeaders(String name)
+    {
+      return realRequest.getHeaders(name);
+    }
+
+    @Override
+    public Enumeration<String> getHeaderNames()
+    {
+      return realRequest.getHeaderNames();
+    }
+
+    @Override
+    public int getIntHeader(String name)
+    {
+      return realRequest.getIntHeader(name);
+    }
+
+    @Override
+    public String getMethod()
+    {
+      return realRequest.getMethod();
+    }
+
+    @Override
+    public String getPathInfo()
+    {
+      return realRequest.getPathInfo();
+    }
+
+    @Override
+    public String getPathTranslated()
+    {
+      return realRequest.getPathTranslated();
+    }
+
+    @Override
+    public String getContextPath()
+    {
+      return realRequest.getContextPath();
+    }
+
+    @Override
+    public String getQueryString()
+    {
+      return realRequest.getQueryString();
+    }
+
+    @Override
+    public String getRemoteUser()
+    {
+      return realRequest.getRemoteUser();
+    }
+
+    @Override
+    public boolean isUserInRole(String role)
+    {
+      return realRequest.isUserInRole(role);
+    }
+
+    @Override
+    public Principal getUserPrincipal()
+    {
+      return realRequest.getUserPrincipal();
+    }
+
+    @Override
+    public String getRequestedSessionId()
+    {
+      return realRequest.getRequestedSessionId();
+    }
+
+    @Override
+    public String getRequestURI()
+    {
+      return realRequest.getRequestURI();
+    }
+
+    @Override
+    public StringBuffer getRequestURL()
+    {
+      return realRequest.getRequestURL();
+    }
+
+    @Override
+    public String getServletPath()
+    {
+      return realRequest.getServletPath();
+    }
+
+    @Override
+    public HttpSession getSession(boolean create)
+    {
+      return realRequest.getSession(create);
+    }
+
+    @Override
+    public HttpSession getSession()
+    {
+      return realRequest.getSession();
+    }
+
+    @Override
+    public String changeSessionId()
+    {
+      return realRequest.changeSessionId();
+    }
+
+    @Override
+    public boolean isRequestedSessionIdValid()
+    {
+      return realRequest.isRequestedSessionIdValid();
+    }
+
+    @Override
+    public boolean isRequestedSessionIdFromCookie()
+    {
+      return realRequest.isRequestedSessionIdFromCookie();
+    }
+
+    @Override
+    public boolean isRequestedSessionIdFromURL()
+    {
+      return realRequest.isRequestedSessionIdFromURL();
+    }
+
+    @Override
+    public boolean isRequestedSessionIdFromUrl()
+    {
+      return realRequest.isRequestedSessionIdFromUrl();
+    }
+
+    @Override
+    public boolean authenticate(HttpServletResponse response) throws IOException, ServletException
+    {
+      return realRequest.authenticate(response);
+    }
+
+    @Override
+    public void login(String username, String password) throws ServletException
+    {
+      realRequest.login(username, password);
+    }
+
+    @Override
+    public void logout() throws ServletException
+    {
+      realRequest.logout();
+    }
+
+    @Override
+    public Collection<Part> getParts() throws IOException, ServletException
+    {
+      return realRequest.getParts();
+    }
+
+    @Override
+    public Part getPart(String name) throws IOException, ServletException
+    {
+      return realRequest.getPart(name);
+    }
+
+    @Override
+    public <T extends HttpUpgradeHandler> T upgrade(Class<T> handlerClass) throws IOException, ServletException
+    {
+      return realRequest.upgrade(handlerClass);
+    }
+
+    @Override
+    public Object getAttribute(String name)
+    {
+      return realRequest.getAttribute(name);
+    }
+
+    @Override
+    public Enumeration<String> getAttributeNames()
+    {
+      return realRequest.getAttributeNames();
+    }
+
+    @Override
+    public String getCharacterEncoding()
+    {
+      return realRequest.getCharacterEncoding();
+    }
+
+    @Override
+    public void setCharacterEncoding(String env) throws UnsupportedEncodingException
+    {
+      realRequest.setCharacterEncoding(env);
+    }
+
+    @Override
+    public int getContentLength()
+    {
+      return realRequest.getContentLength();
+    }
+
+    @Override
+    public long getContentLengthLong()
+    {
+      return realRequest.getContentLengthLong();
+    }
+
+    @Override
+    public String getContentType()
+    {
+      return realRequest.getContentType();
+    }
+
+    @Override
+    public ServletInputStream getInputStream() throws IOException
+    {
+      return realRequest.getInputStream();
+    }
+
+    @Override
+    public String getParameter(String name)
+    {
+      return realRequest.getParameter(name);
+    }
+
+    @Override
+    public Enumeration<String> getParameterNames()
+    {
+      return realRequest.getParameterNames();
+    }
+
+    @Override
+    public String[] getParameterValues(String name)
+    {
+      return realRequest.getParameterValues(name);
+    }
+
+    @Override
+    public Map<String, String[]> getParameterMap()
+    {
+      return realRequest.getParameterMap();
+    }
+
+    @Override
+    public String getProtocol()
+    {
+      return realRequest.getProtocol();
+    }
+
+    @Override
+    public String getScheme()
+    {
+      return realRequest.getScheme();
+    }
+
+    @Override
+    public String getServerName()
+    {
+      return realRequest.getServerName();
+    }
+
+    @Override
+    public int getServerPort()
+    {
+      return realRequest.getServerPort();
+    }
+
+    @Override
+    public BufferedReader getReader() throws IOException
+    {
+      return realRequest.getReader();
+    }
+
+    @Override
+    public String getRemoteAddr()
+    {
+      return realRequest.getRemoteAddr();
+    }
+
+    @Override
+    public String getRemoteHost()
+    {
+      return realRequest.getRemoteHost();
+    }
+
+    @Override
+    public void setAttribute(String name, Object o)
+    {
+      realRequest.setAttribute(name, o);
+    }
+
+    @Override
+    public void removeAttribute(String name)
+    {
+      realRequest.removeAttribute(name);
+    }
+
+    @Override
+    public Locale getLocale()
+    {
+      return realRequest.getLocale();
+    }
+
+    @Override
+    public Enumeration<Locale> getLocales()
+    {
+      return realRequest.getLocales();
+    }
+
+    @Override
+    public boolean isSecure()
+    {
+      return realRequest.isSecure();
+    }
+
+    @Override
+    public RequestDispatcher getRequestDispatcher(String path)
+    {
+      return realRequest.getRequestDispatcher(path);
+    }
+
+    @Override
+    public String getRealPath(String path)
+    {
+      return realRequest.getRealPath(path);
+    }
+
+    @Override
+    public int getRemotePort()
+    {
+      return realRequest.getRemotePort();
+    }
+
+    @Override
+    public String getLocalName()
+    {
+      return realRequest.getLocalName();
+    }
+
+    @Override
+    public String getLocalAddr()
+    {
+      return realRequest.getLocalAddr();
+    }
+
+    @Override
+    public int getLocalPort()
+    {
+      return realRequest.getLocalPort();
+    }
+
+    @Override
+    public ServletContext getServletContext()
+    {
+      return realRequest.getServletContext();
+    }
+
+    @Override
+    public AsyncContext startAsync() throws IllegalStateException
+    {
+      asyncStarted = true;
+      if (realRequest.isAsyncStarted()) {
+        return realRequest.getAsyncContext();
+      } else {
+        return realRequest.startAsync();
+      }
+    }
+
+    @Override
+    public AsyncContext startAsync(
+        ServletRequest servletRequest, ServletResponse servletResponse
+    ) throws IllegalStateException
+    {
+      asyncStarted = true;
+      if (realRequest.isAsyncStarted()) {
+        return realRequest.getAsyncContext();
+      } else {
+        return realRequest.startAsync(servletRequest, servletResponse);
+      }
+    }
+
+    // Foll the outside functions here
+    @Override
+    public boolean isAsyncStarted()
+    {
+      return asyncStarted;
+    }
+
+    @Override
+    public boolean isAsyncSupported()
+    {
+      return realRequest.isAsyncSupported();
+    }
+
+    @Override
+    public AsyncContext getAsyncContext()
+    {
+      return realRequest.getAsyncContext();
+    }
+
+    @Override
+    public DispatcherType getDispatcherType()
+    {
+      return realRequest.getDispatcherType();
     }
   }
 }

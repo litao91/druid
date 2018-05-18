@@ -80,23 +80,23 @@ public class InterpolatorTest
   public void testQueryIntervalDurationInterpolator() throws IOException
   {
     String queryStr = "{\n" +
-        "    \"aggregations\": [\n" +
-        "        {\n" +
-        "            \"fieldName\": \"count\", \n" +
-        "            \"type\": \"longSum\", \n" +
-        "            \"name\": \"count\"\n" +
-        "        }\n" +
-        "    ], \n" +
-        "    \"intervals\": [\n" +
-        "        \"2018-02-23T00:00:00/2018-02-24T00:00:00\"\n" +
-        "    ], \n" +
-        "    \"dataSource\": \"audience_stat_gender\", \n" +
-        "    \"context\": {\n" +
-        "        \"timeout\": 25000\n" +
-        "    }, \n" +
-        "    \"granularity\": \"all\", \n" +
-        "    \"queryType\": \"groupBy\"\n" +
-        "}";
+                      "    \"aggregations\": [\n" +
+                      "        {\n" +
+                      "            \"fieldName\": \"count\", \n" +
+                      "            \"type\": \"longSum\", \n" +
+                      "            \"name\": \"count\"\n" +
+                      "        }\n" +
+                      "    ], \n" +
+                      "    \"intervals\": [\n" +
+                      "        \"2018-02-23T00:00:00/2018-02-24T00:00:00\"\n" +
+                      "    ], \n" +
+                      "    \"dataSource\": \"audience_stat_gender\", \n" +
+                      "    \"context\": {\n" +
+                      "        \"timeout\": 25000\n" +
+                      "    }, \n" +
+                      "    \"granularity\": \"all\", \n" +
+                      "    \"queryType\": \"groupBy\"\n" +
+                      "}";
     ObjectMapper mapper = TestHelper.makeJsonMapper();
     Query q = mapper.readValue(queryStr, Query.class);
     QueryIntervalDurationInterpolator interpolator = new QueryIntervalDurationInterpolator(
@@ -133,9 +133,13 @@ public class InterpolatorTest
         )
     );
     ObjectMapper mapper = new DefaultObjectMapper();
-    String serialized = mapper.writerWithType(new TypeReference<List<QueryInterpolator>>(){}).writeValueAsString(expected);
+    String serialized = mapper.writerWithType(new TypeReference<List<QueryInterpolator>>()
+    {
+    }).writeValueAsString(expected);
     List<QueryInterpolator> deserialized = mapper.reader(
-        new TypeReference<List<QueryInterpolator>>() {}).readValue(serialized);
+        new TypeReference<List<QueryInterpolator>>()
+        {
+        }).readValue(serialized);
     Assert.assertEquals(expected.size(), deserialized.size());
     for (int i = 0; i < expected.size(); ++i) {
       Assert.assertEquals(expected.get(i), deserialized.get(i));
@@ -149,12 +153,11 @@ public class InterpolatorTest
         new QueryIntervalDurationInterpolator(
             ImmutableList.of(),
             ImmutableList.of(),
-            7776000000L)));
+            7776000000L
+        )), 0, 0, 0);
     ObjectMapper mapper = TestHelper.makeJsonMapper();
     String serialized = mapper.writeValueAsString(config);
     QueryProxyBehaviorConfig deserialized = mapper.reader(QueryProxyBehaviorConfig.class).readValue(serialized);
     Assert.assertEquals(config.getQueryInterpolators().get(0), deserialized.getQueryInterpolators().get(0));
   }
-
-
 }
