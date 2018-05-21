@@ -25,7 +25,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
 import com.google.inject.Inject;
-import io.druid.java.util.emitter.EmittingLogger;
 import io.druid.client.selector.Server;
 import io.druid.discovery.DiscoveryDruidNode;
 import io.druid.discovery.DruidNodeDiscovery;
@@ -34,6 +33,7 @@ import io.druid.java.util.common.DateTimes;
 import io.druid.java.util.common.Pair;
 import io.druid.java.util.common.lifecycle.LifecycleStart;
 import io.druid.java.util.common.lifecycle.LifecycleStop;
+import io.druid.java.util.common.logger.Logger;
 import io.druid.query.Query;
 import io.druid.server.coordinator.rules.LoadRule;
 import io.druid.server.coordinator.rules.Rule;
@@ -50,7 +50,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class TieredBrokerHostSelector<T>
 {
-  private static EmittingLogger log = new EmittingLogger(TieredBrokerHostSelector.class);
+  private static Logger log = new Logger(TieredBrokerHostSelector.class);
 
   private final CoordinatorRuleManager ruleManager;
   private final TieredBrokerConfig tierConfig;
@@ -134,8 +134,11 @@ public class TieredBrokerHostSelector<T>
             {
               nodes.forEach(
                   (node) -> {
+                    log.info("New Broker Node discovered: " + node.getDruidNode().getHost() + ":" + 
+                        node.getDruidNode().getPlaintextPort() + ", " + node.getDruidNode().getServiceName());
                     NodesHolder nodesHolder = servers.get(node.getDruidNode().getServiceName());
                     if (nodesHolder != null) {
+                      log.info("Adding server: " + node.getDruidNode().getHostAndPort() + " to servers");
                       nodesHolder.add(node.getDruidNode().getHostAndPortToUse(), TO_SERVER.apply(node));
                     }
                   }

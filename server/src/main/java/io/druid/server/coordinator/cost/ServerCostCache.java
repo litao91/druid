@@ -42,7 +42,7 @@ public class ServerCostCache
 
   double computeCost(DataSegment segment)
   {
-    return allSegmentsCostCache.cost(segment) + computeDataSourceCost(segment);
+    return allSegmentsCostCache.cost(segment) + 100 * computeDataSourceCost(segment);
   }
 
   private double computeDataSourceCost(DataSegment segment)

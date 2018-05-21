@@ -32,6 +32,7 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.inject.Inject;
+import com.google.inject.Injector;
 import com.google.inject.ProvisionException;
 import com.google.inject.spi.Message;
 import io.druid.java.util.common.StringUtils;
@@ -58,8 +59,8 @@ public class JsonConfigurator
 
   private final ObjectMapper jsonMapper;
   private final Validator validator;
+  final Injector injector;
 
-  @Inject
   public JsonConfigurator(
       ObjectMapper jsonMapper,
       Validator validator
@@ -67,6 +68,19 @@ public class JsonConfigurator
   {
     this.jsonMapper = jsonMapper;
     this.validator = validator;
+    this.injector = null;
+  }
+
+  @Inject
+  public JsonConfigurator(
+      ObjectMapper jsonMapper,
+      Validator validator,
+      Injector injector
+  )
+  {
+    this.jsonMapper = jsonMapper;
+    this.validator = validator;
+    this.injector = injector;
   }
 
   public <T> T configurate(Properties props, String propertyPrefix, Class<T> clazz) throws ProvisionException
@@ -100,6 +114,9 @@ public class JsonConfigurator
     final T config;
     try {
       config = jsonMapper.convertValue(jsonMap, clazz);
+      if (injector != null) {
+        injector.injectMembers(config);
+      }
     }
     catch (IllegalArgumentException e) {
       throw new ProvisionException(
@@ -161,7 +178,6 @@ public class JsonConfigurator
     }
 
     log.info("Loaded class[%s] from props[%s] as [%s]", clazz, propertyBase, config);
-
     return config;
   }
 

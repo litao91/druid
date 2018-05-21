@@ -148,12 +148,28 @@ public class HeapMemoryTaskStorage implements TaskStorage
     }
   }
 
+
+  private void cleanOldTasks()
+  {
+    long now = System.currentTimeMillis();
+    long twoDaysInMillis = 1000 * 60 * 60 * 12;
+    List<TaskStuff> oldTasks = tasks.values().stream().filter(taskStuff -> taskStuff.getStatus().isComplete()
+        && now - taskStuff.getCreatedDate().getMillis() > twoDaysInMillis).collect(Collectors.toList());
+    int count = 0;
+    for (TaskStuff t : oldTasks) {
+      count++;
+      tasks.remove(t.task.getId());
+    }
+    log.info("Cleaned %d tasks", count);
+  }
+
   @Override
   public List<Task> getActiveTasks()
   {
     giant.lock();
 
     try {
+      cleanOldTasks();
       final ImmutableList.Builder<Task> listBuilder = ImmutableList.builder();
       for (final TaskStuff taskStuff : tasks.values()) {
         if (taskStuff.getStatus().isRunnable()) {

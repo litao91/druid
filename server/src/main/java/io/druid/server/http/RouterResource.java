@@ -20,8 +20,13 @@
 package io.druid.server.http;
 
 import com.google.inject.Inject;
+import com.sun.jersey.spi.container.ResourceFilters;
 import io.druid.client.selector.Server;
 import io.druid.server.router.TieredBrokerHostSelector;
+import io.druid.server.http.security.ConfigResourceFilter;
+import io.druid.server.AsyncQueryForwardingServlet;
+import io.druid.server.http.security.StateResourceFilter;
+import io.druid.server.router.QueryQueue;
 
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
@@ -38,16 +43,19 @@ import java.util.stream.Collectors;
 public class RouterResource
 {
   private final TieredBrokerHostSelector tieredBrokerHostSelector;
+  private final AsyncQueryForwardingServlet servlet;
 
   @Inject
-  public RouterResource(TieredBrokerHostSelector tieredBrokerHostSelector)
+  public RouterResource(TieredBrokerHostSelector tieredBrokerHostSelector, AsyncQueryForwardingServlet servlet)
   {
     this.tieredBrokerHostSelector = tieredBrokerHostSelector;
+    this.servlet = servlet;
   }
 
   @GET
   @Path("/brokers")
   @Produces(MediaType.APPLICATION_JSON)
+  @ResourceFilters(ConfigResourceFilter.class)
   public Map<String, List<String>> getBrokers()
   {
     Map<String, List<Server>> brokerSelectorMap = tieredBrokerHostSelector.getAllBrokers();
@@ -59,5 +67,23 @@ public class RouterResource
     }
 
     return brokersMap;
+  }
+
+  @GET
+  @Path("/runningQueries")
+  @Produces(MediaType.APPLICATION_JSON)
+  @ResourceFilters(StateResourceFilter.class)
+  public List<QueryQueue.QueryStuff> getRunningQueries()
+  {
+    return servlet.getRunningQueries();
+  }
+
+  @GET
+  @Path("/pendingQueries")
+  @Produces(MediaType.APPLICATION_JSON)
+  @ResourceFilters(StateResourceFilter.class)
+  public List<QueryQueue.QueryStuff> getPendingQueries()
+  {
+    return servlet.getPendingQueries();
   }
 }

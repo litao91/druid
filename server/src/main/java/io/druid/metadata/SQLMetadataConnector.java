@@ -229,7 +229,7 @@ public abstract class SQLMetadataConnector implements MetadataStorageConnector
                 + "  sequence_name_prev_id_sha1 VARCHAR(255) NOT NULL,\n"
                 + "  payload %2$s NOT NULL,\n"
                 + "  PRIMARY KEY (id),\n"
-                + "  UNIQUE (sequence_name_prev_id_sha1)\n"
+                + "  UNIQUE (uniq_sequence_name_prev_id_sha1)\n"
                 + ")",
                 tableName, getPayloadType(), getQuoteString()
             )
@@ -277,7 +277,8 @@ public abstract class SQLMetadataConnector implements MetadataStorageConnector
                 tableName, getPayloadType(), getQuoteString()
             ),
             StringUtils.format("CREATE INDEX idx_%1$s_datasource ON %1$s(dataSource)", tableName),
-            StringUtils.format("CREATE INDEX idx_%1$s_used ON %1$s(used)", tableName)
+            StringUtils.format("CREATE INDEX idx_%1$s_used ON %1$s(used)", tableName),
+            StringUtils.format("CREATE INDEX idx_%1$s_created_date ON %1$s(created_date)", tableName)
         )
     );
   }
@@ -572,6 +573,37 @@ public abstract class SQLMetadataConnector implements MetadataStorageConnector
       createLogTable(tablesConfig.getLogTable(entryType), entryType);
       createLockTable(tablesConfig.getLockTable(entryType), entryType);
     }
+  }
+
+  public void createQueryLogTable() 
+  {
+    if (config.get().isCreateTables()) {
+      createQueryLogTable(tablesConfigSupplier.get().getQueryLogTable());
+    }
+  }
+
+  public void createQueryLogTable(String tableName)
+  {
+    createTable(
+        tableName,
+        ImmutableList.of(
+            StringUtils.format(
+                "CREATE TABLE %1$s (\n"
+                + "`id` bigint(20) NOT NULL AUTO_INCREMENT,\n"
+                + "`query_id` varchar(128) NOT NULL,\n"
+                + "`query_date` datetime(6) NOT NULL,\n"
+                + "`remote_addr` varchar(256) NOT NULL,\n"
+                + "`datasource` varchar(128) NOT NULL,\n"
+                + "`query_type` varchar(32) NOT NULL,\n"
+                + "`query_stats` longtext NOT NULL,\n"
+                + "`query` longtext NOT NULL,\n"
+                + "PRIMARY KEY (`id`),\n"
+                + "KEY `idx_druid_querylog_query_id` (`query_id`),\n"
+                + "KEY `idx_druid_querylog_datasource` (`datasource`) \n"
+                + ")", tableName
+            )
+        )
+    );
   }
 
   @Override

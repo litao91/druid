@@ -22,19 +22,27 @@ package io.druid.server;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.jaxrs.smile.SmileMediaTypes;
+import com.google.common.base.Supplier;
 import com.google.common.base.Throwables;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Maps;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
 import io.druid.client.selector.Server;
+import io.druid.common.guava.DSuppliers;
 import io.druid.guice.annotations.Json;
 import io.druid.guice.annotations.Smile;
 import io.druid.guice.http.DruidHttpClientConfig;
 import io.druid.java.util.common.DateTimes;
 import io.druid.java.util.common.IAE;
+import io.druid.java.util.common.StringUtils;
 import io.druid.java.util.common.jackson.JacksonUtils;
+import io.druid.java.util.common.logger.Logger;
 import io.druid.java.util.emitter.EmittingLogger;
 import io.druid.java.util.emitter.service.ServiceEmitter;
+import io.druid.metadata.EntryExistsException;
 import io.druid.query.DruidMetrics;
 import io.druid.query.GenericQueryMetricsFactory;
 import io.druid.query.Query;
@@ -43,7 +51,10 @@ import io.druid.query.QueryToolChestWarehouse;
 import io.druid.server.log.RequestLogger;
 import io.druid.server.metrics.QueryCountStatsProvider;
 import io.druid.server.router.QueryHostFinder;
+import io.druid.server.router.QueryQueue;
 import io.druid.server.router.Router;
+import io.druid.server.router.interpolator.QueryInterpolator;
+import io.druid.server.router.setup.QueryProxyBehaviorConfig;
 import io.druid.server.security.AuthConfig;
 import org.apache.http.client.utils.URIBuilder;
 import org.eclipse.jetty.client.HttpClient;
@@ -53,25 +64,48 @@ import org.eclipse.jetty.client.api.Result;
 import org.eclipse.jetty.client.util.BytesContentProvider;
 import org.eclipse.jetty.http.HttpMethod;
 import org.eclipse.jetty.proxy.AsyncProxyServlet;
+import org.eclipse.jetty.proxy.ProxyServlet;
+import org.eclipse.jetty.util.Callback;
+import org.eclipse.jetty.http.HttpVersion;
+import org.eclipse.jetty.client.util.DeferredContentProvider;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.servlet.AsyncContext;
 import javax.ws.rs.core.MediaType;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Map;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.Condition;
+
+
+import java.io.Closeable;
+import java.util.Iterator;
+
+import org.eclipse.jetty.client.AsyncContentProvider;
+import org.eclipse.jetty.client.api.ContentProvider;
+import org.eclipse.jetty.util.IteratingCallback;
+
 
 /**
  * This class does async query processing and should be merged with QueryResource at some point
  */
 public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements QueryCountStatsProvider
 {
+  private static final String CONTINUE_ACTION_ATTRIBUTE = ProxyServlet.class.getName() + ".continueAction";
   private static final EmittingLogger log = new EmittingLogger(AsyncQueryForwardingServlet.class);
+  private static final Logger logger = new Logger(AsyncQueryForwardingServlet.class);
   @Deprecated // use SmileMediaTypes.APPLICATION_JACKSON_SMILE
   private static final String APPLICATION_SMILE = "application/smile";
 
@@ -112,10 +146,25 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
   private final ServiceEmitter emitter;
   private final RequestLogger requestLogger;
   private final GenericQueryMetricsFactory queryMetricsFactory;
+  private final Supplier<QueryProxyBehaviorConfig> proxyBehaviorConfigRef;
+  private final QueryQueue queryQueue;
+  // from query id to timeout
+  private final Map<String, QueryQueue.QueryStuff> runningQueries = Maps.newHashMap();
+  private final ReentrantLock runningQueryLock;
+  private final Condition notFull;
+
+
+  private final ExecutorService managerExec = Executors.newSingleThreadExecutor(
+      new ThreadFactoryBuilder()
+          .setDaemon(false)
+          .setNameFormat("QueryQueue-Manager").build()
+  );
 
   private HttpClient broadcastClient;
 
-  @Inject
+  /**
+   * This is strictly for testing purpose only, never use this contructor
+   */
   public AsyncQueryForwardingServlet(
       QueryToolChestWarehouse warehouse,
       @Json ObjectMapper jsonMapper,
@@ -137,6 +186,39 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     this.emitter = emitter;
     this.requestLogger = requestLogger;
     this.queryMetricsFactory = queryMetricsFactory;
+    this.proxyBehaviorConfigRef = DSuppliers.of(new AtomicReference<>(new QueryProxyBehaviorConfig()));
+    this.queryQueue = new QueryQueue(this.proxyBehaviorConfigRef);
+    runningQueryLock = new ReentrantLock();
+    notFull = runningQueryLock.newCondition();
+  }
+
+  @Inject
+  public AsyncQueryForwardingServlet(
+      QueryToolChestWarehouse warehouse,
+      @Json ObjectMapper jsonMapper,
+      @Smile ObjectMapper smileMapper,
+      QueryHostFinder hostFinder,
+      @Router Provider<HttpClient> httpClientProvider,
+      @Router DruidHttpClientConfig httpClientConfig,
+      ServiceEmitter emitter,
+      RequestLogger requestLogger,
+      GenericQueryMetricsFactory queryMetricsFactory,
+      final Supplier<QueryProxyBehaviorConfig> proxyConfigRef
+  )
+  {
+    this.warehouse = warehouse;
+    this.jsonMapper = jsonMapper;
+    this.smileMapper = smileMapper;
+    this.hostFinder = hostFinder;
+    this.httpClientProvider = httpClientProvider;
+    this.httpClientConfig = httpClientConfig;
+    this.emitter = emitter;
+    this.requestLogger = requestLogger;
+    this.queryMetricsFactory = queryMetricsFactory;
+    this.proxyBehaviorConfigRef = proxyConfigRef;
+    this.queryQueue = new QueryQueue(this.proxyBehaviorConfigRef);
+    runningQueryLock = new ReentrantLock();
+    notFull = runningQueryLock.newCondition();
   }
 
   @Override
@@ -153,6 +235,60 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     catch (Exception e) {
       throw new ServletException(e);
     }
+
+    managerExec.submit(
+        () -> {
+          while (true) {
+            try {
+              manageQueries();
+            }
+            catch (InterruptedException e) {
+              logger.info("Interrupted exiting!");
+              break;
+            }
+            catch (Exception e) {
+              log.makeAlert(e, "Failed to manage");
+              try {
+                Thread.sleep(this.proxyBehaviorConfigRef.get().getStartDelayMillis());
+              }
+              catch (InterruptedException e2) {
+                logger.info("Interrupted exiting");
+                break;
+              }
+            }
+          }
+        });
+  }
+
+  private void manageQueries() throws InterruptedException
+  {
+    logger.info("Beginning management in %s.", proxyBehaviorConfigRef.get().getStartDelayMillis());
+    while (true) {
+      final QueryQueue.QueryStuff queryStuff = queryQueue.pollNextToRun();
+      logger.debug("polled next query: " + queryStuff.getQuery().getId());
+
+      runningQueryLock.lock();
+      try {
+        while (runningQueries.size() >= proxyBehaviorConfigRef.get().getMaxRunningQueries()) {
+          logger.info(StringUtils.format(
+                "runningQuerySize(%d) >= maxRunningQueries(%d), wait for query to complete",
+                runningQueries.size(), proxyBehaviorConfigRef.get().getMaxRunningQueries()
+                ));
+
+          notFull.await();
+        }
+        logger.debug("Asking query %s to run", queryStuff.getQuery().getId());
+        runningQueries.put(queryStuff.getQuery().getId(), queryStuff);
+        sendProxyRequest(queryStuff.getRequest(), queryStuff.getResponse(), queryStuff.getProxyRequest());
+      }
+      catch (Exception e) {
+        logger.error(e, "do Service error for query %s", queryStuff.getQuery().getId());
+        runningQueries.remove(queryStuff.getQuery().getId());
+      }
+      finally {
+        runningQueryLock.unlock();
+      }
+    }
   }
 
   @Override
@@ -163,8 +299,70 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
       broadcastClient.stop();
     }
     catch (Exception e) {
-      log.warn(e, "Error stopping servlet");
+      logger.warn(e, "Error stopping servlet");
     }
+  }
+
+  public Request prepareService(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException 
+  {
+    final int requestId = getRequestId(request);
+
+    String rewrittenTarget = rewriteTarget(request);
+
+    if (_log.isDebugEnabled()) {
+      StringBuffer uri = request.getRequestURL();
+      if (request.getQueryString() != null) {
+        uri.append("?").append(request.getQueryString());
+      }
+      if (_log.isDebugEnabled()) {
+        _log.debug("{} rewriting: {} -> {}", requestId, uri, rewrittenTarget);
+      }
+    }
+
+    if (rewrittenTarget == null) {
+      onProxyRewriteFailed(request, response);
+      return null;
+    }
+
+    final Request proxyRequest = getHttpClient().newRequest(rewrittenTarget)
+        .method(request.getMethod())
+        .version(HttpVersion.fromString(request.getProtocol()));
+
+    copyRequestHeaders(request, proxyRequest);
+
+    addProxyHeaders(request, proxyRequest);
+
+    final AsyncContext asyncContext = request.startAsync();
+    // We do not timeout the continuation, but the proxy request
+    asyncContext.setTimeout(0);
+    proxyRequest.timeout(getTimeout(), TimeUnit.MILLISECONDS);
+
+    if (hasContent(request)) {
+      if (expects100Continue(request)) {
+        DeferredContentProvider deferred = new DeferredContentProvider();
+        proxyRequest.content(deferred);
+        proxyRequest.attribute(CLIENT_REQUEST_ATTRIBUTE, request);
+        proxyRequest.attribute(CONTINUE_ACTION_ATTRIBUTE, (Runnable) () -> {
+          try {
+            ContentProvider provider = proxyRequestContent(request, response, proxyRequest);
+            new DelegatingContentProvider(request, proxyRequest, response, provider, deferred).iterate();
+          }
+          catch (Throwable failure) {
+            onClientRequestFailure(request, proxyRequest, response, failure);
+          }
+        });
+      } else {
+        proxyRequest.content(proxyRequestContent(request, response, proxyRequest));
+      }
+    }
+
+    // Since we can't see the request object on the remote side, we can't check whether the remote side actually
+    // performed an authorization check here, so always set this to true for the proxy servlet.
+    // If the remote node failed to perform an authorization check, PreResponseAuthorizationCheckFilter
+    // will log that on the remote node.
+    request.setAttribute(AuthConfig.DRUID_AUTHORIZATION_CHECKED, true);
+
+    return proxyRequest;
   }
 
   @Override
@@ -206,7 +404,7 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
           // issue async requests
           Response.CompleteListener completeListener = result -> {
             if (result.isFailed()) {
-              log.warn(
+              logger.warn(
                   result.getFailure(),
                   "Failed to forward cancellation request to [%s]",
                   server.getHost()
@@ -228,18 +426,41 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
       // query request
       try {
         Query inputQuery = objectMapper.readValue(request.getInputStream(), Query.class);
+        if (inputQuery.getId() == null) {
+          inputQuery = inputQuery.withId(UUID.randomUUID().toString());
+        }
         if (inputQuery != null) {
+          // check the interpolators
+          for (QueryInterpolator interpolator : proxyBehaviorConfigRef.get().getQueryInterpolators()) {
+            QueryInterpolator.InterpolateResult r = interpolator.runInterpolation(inputQuery, this);
+            if (!r.queryShouldRun()) {
+              logger.warn("Query banned by interpolator: " + interpolator.toString());
+              final String errorMessage = r.getMessage();
+              requestLogger.log(
+                  new RequestLogLine(
+                      DateTimes.nowUtc(),
+                      request.getRemoteAddr(),
+                      inputQuery,
+                      new QueryStats(ImmutableMap.of("success", false, "exception", errorMessage))
+                  )
+              );
+              response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+              response.setContentType(MediaType.APPLICATION_JSON);
+              objectMapper.writeValue(
+                  response.getOutputStream(),
+                  ImmutableMap.of("error", errorMessage)
+              );
+              return;
+            }
+          }          // find the appropriate server
           targetServer = hostFinder.pickServer(inputQuery);
-          if (inputQuery.getId() == null) {
-            inputQuery = inputQuery.withId(UUID.randomUUID().toString());
-          }
         } else {
           targetServer = hostFinder.pickDefaultServer();
         }
         request.setAttribute(QUERY_ATTRIBUTE, inputQuery);
       }
       catch (IOException e) {
-        log.warn(e, "Exception parsing query");
+        logger.warn(e, "Exception parsing query");
         final String errorMessage = e.getMessage() == null ? "no error message" : e.getMessage();
         requestLogger.log(
             new RequestLogLine(
@@ -269,7 +490,32 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     request.setAttribute(HOST_ATTRIBUTE, targetServer.getHost());
     request.setAttribute(SCHEME_ATTRIBUTE, targetServer.getScheme());
 
-    doService(request, response);
+    if (isQueryEndpoint && HttpMethod.POST.is(method)) {
+      try {
+        Query query = (Query) request.getAttribute(QUERY_ATTRIBUTE);
+        logger.info("Adding query: %s to query queue, request: %s, response: %s", query.getId(), request.toString(), response.toString());
+        if (!queryQueue.add(query, request, response, this)) {
+          response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+          response.setContentType(MediaType.APPLICATION_JSON);
+          objectMapper.writeValue(
+              response.getOutputStream(),
+              ImmutableMap.of("error", "Query queue full, please try again later")
+          );
+        }
+      }
+      catch (EntryExistsException e) {
+        response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+        response.setContentType(MediaType.APPLICATION_JSON);
+        final String errorMessage = e.getMessage() == null ? "no error message" : e.getMessage();
+        objectMapper.writeValue(
+            response.getOutputStream(),
+            ImmutableMap.of("error", errorMessage)
+        );
+      }
+    } else {
+      // run service directly
+      doService(request, response);
+    }
   }
 
   protected void doService(
@@ -307,12 +553,6 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
       }
     }
 
-    // Since we can't see the request object on the remote side, we can't check whether the remote side actually
-    // performed an authorization check here, so always set this to true for the proxy servlet.
-    // If the remote node failed to perform an authorization check, PreResponseAuthorizationCheckFilter
-    // will log that on the remote node.
-    clientRequest.setAttribute(AuthConfig.DRUID_AUTHORIZATION_CHECKED, true);
-
     super.sendProxyRequest(
         clientRequest,
         proxyResponse,
@@ -327,7 +567,7 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
   {
     final Query query = (Query) request.getAttribute(QUERY_ATTRIBUTE);
     if (query != null) {
-      return newMetricsEmittingProxyResponseListener(request, response, query, System.nanoTime());
+      return newQueryForwardingProxyResponseListener(request, response, query, System.nanoTime());
     } else {
       return super.newProxyResponseListener(request, response);
     }
@@ -360,7 +600,7 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
           .build();
     }
     catch (URISyntaxException e) {
-      log.error(e, "Unable to rewrite URI [%s]", e.getMessage());
+      logger.error(e, "Unable to rewrite URI [%s]", e.getMessage());
       throw Throwables.propagate(e);
     }
   }
@@ -380,14 +620,14 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     return client;
   }
 
-  private Response.Listener newMetricsEmittingProxyResponseListener(
+  private Response.Listener newQueryForwardingProxyResponseListener(
       HttpServletRequest request,
       HttpServletResponse response,
       Query query,
       long startNs
   )
   {
-    return new MetricsEmittingProxyResponseListener(request, response, query, startNs);
+    return new QueryForwardingProxyResponseListener(request, response, query, startNs);
   }
 
   @Override
@@ -408,7 +648,18 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     return interruptedQueryCount.get();
   }
 
-  private static String getAvaticaConnectionId(Map<String, Object> requestMap) throws IOException
+  public List<QueryQueue.QueryStuff> getRunningQueries()
+  {
+    return ImmutableList.copyOf(runningQueries.values());
+  }
+
+  public List<QueryQueue.QueryStuff> getPendingQueries()
+  {
+    return queryQueue.getQueries();
+  }
+
+
+  private static String getAvaticaConnectionId(Map<String, Object> requestMap)
   {
     Object connectionIdObj = requestMap.get("connectionId");
     if (connectionIdObj == null) {
@@ -421,14 +672,14 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     return (String) connectionIdObj;
   }
 
-  private class MetricsEmittingProxyResponseListener extends ProxyResponseListener
+  private class QueryForwardingProxyResponseListener extends ProxyResponseListener
   {
     private final HttpServletRequest req;
     private final HttpServletResponse res;
     private final Query query;
     private final long startNs;
 
-    public MetricsEmittingProxyResponseListener(
+    public QueryForwardingProxyResponseListener(
         HttpServletRequest request,
         HttpServletResponse response,
         Query query,
@@ -444,8 +695,26 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     }
 
     @Override
+    public void onContent(final Response proxyResponse, ByteBuffer content, final Callback callback)
+    {
+      logger.info("Query %s content", query.getId());
+      runningQueryLock.lock();
+      try {
+        runningQueries.remove(query.getId());
+        notFull.signal();
+      }
+      finally {
+        runningQueryLock.unlock();
+      }
+
+      logger.info("Query %s removed from running queries", query.getId());
+      super.onContent(proxyResponse, content, callback);
+    }
+
+    @Override
     public void onComplete(Result result)
     {
+
       final long requestTimeNs = System.nanoTime() - startNs;
       try {
         boolean success = result.isSucceeded();
@@ -461,7 +730,7 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
                 req.getRemoteAddr(),
                 query,
                 new QueryStats(
-                    ImmutableMap.<String, Object>of(
+                    ImmutableMap.of(
                         "query/time",
                         TimeUnit.NANOSECONDS.toMillis(requestTimeNs),
                         "success",
@@ -475,7 +744,7 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
 
       }
       catch (Exception e) {
-        log.error(e, "Unable to log query [%s]!", query);
+        logger.error(e, "Unable to log query [%s]!", query);
       }
 
       super.onComplete(result);
@@ -505,7 +774,7 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
         );
       }
       catch (IOException logError) {
-        log.error(logError, "Unable to log query [%s]!", query);
+        logger.error(logError, "Unable to log query [%s]!", query);
       }
 
       log.makeAlert(failure, "Exception handling request")
@@ -527,6 +796,87 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
       );
       queryMetrics.success(success);
       queryMetrics.reportQueryTime(requestTimeNs).emit(emitter);
+    }
+  }
+
+  private class DelegatingContentProvider extends IteratingCallback implements AsyncContentProvider.Listener
+  {
+    private final HttpServletRequest clientRequest;
+    private final Request proxyRequest;
+    private final HttpServletResponse proxyResponse;
+    private final Iterator<ByteBuffer> iterator;
+    private final DeferredContentProvider deferred;
+
+    private DelegatingContentProvider(HttpServletRequest clientRequest, Request proxyRequest, HttpServletResponse proxyResponse, ContentProvider provider, DeferredContentProvider deferred)
+    {
+      this.clientRequest = clientRequest;
+      this.proxyRequest = proxyRequest;
+      this.proxyResponse = proxyResponse;
+      this.iterator = provider.iterator();
+      this.deferred = deferred;
+      if (provider instanceof AsyncContentProvider) {
+        ((AsyncContentProvider) provider).setListener(this);
+      }
+    }
+
+    @Override
+    protected Action process() throws Exception
+    {
+      if (!iterator.hasNext()) {
+        return Action.SUCCEEDED;
+      }
+
+      ByteBuffer buffer = iterator.next();
+      if (buffer == null) {
+        return Action.IDLE;
+      }
+
+      deferred.offer(buffer, this);
+      return Action.SCHEDULED;
+    }
+
+    @Override
+    public void succeeded()
+    {
+      if (iterator instanceof Callback) {
+        ((Callback) iterator).succeeded();
+      }
+      super.succeeded();
+    }
+
+    @Override
+    protected void onCompleteSuccess()
+    {
+      try {
+        if (iterator instanceof Closeable) {
+          ((Closeable) iterator).close();
+        }
+        deferred.close();
+      }
+      catch (Throwable x) {
+        _log.ignore(x);
+      }
+    }
+
+    @Override
+    protected void onCompleteFailure(Throwable failure)
+    {
+      if (iterator instanceof Callback) {
+        ((Callback) iterator).failed(failure);
+      }
+      onClientRequestFailure(clientRequest, proxyRequest, proxyResponse, failure);
+    }
+
+    @Override
+    public boolean isNonBlocking()
+    {
+      return true;
+    }
+
+    @Override
+    public void onContent()
+    {
+      iterate();
     }
   }
 }

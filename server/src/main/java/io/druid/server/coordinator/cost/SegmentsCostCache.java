@@ -93,7 +93,7 @@ public class SegmentsCostCache
    * The value of 1 day means that cost function of co-locating two segments which have 1 days between their intervals
    * is 0.5 of the cost, if the intervals are adjacent. If the distance is 2 days, then 0.25, etc.
    */
-  private static final double HALF_LIFE_DAYS = 1.0;
+  private static final double HALF_LIFE_DAYS = 3.0;
   private static final double LAMBDA = Math.log(2) / HALF_LIFE_DAYS;
   private static final double MILLIS_FACTOR = TimeUnit.DAYS.toMillis(1) / LAMBDA;
 

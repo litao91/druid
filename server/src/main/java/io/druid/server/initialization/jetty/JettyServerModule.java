@@ -130,6 +130,11 @@ public class JettyServerModule extends JerseyServletModule
     {
       super(injector);
       this.resources = resources;
+      if (log.isDebugEnabled()) {
+        for (Class<?> r: resources) {
+          log.debug("Jetty Resource: " + r.toString());
+        }
+      }
     }
 
     @Override

@@ -26,6 +26,7 @@ import com.google.inject.Module;
 import com.google.inject.Provides;
 import com.google.inject.TypeLiteral;
 import com.google.inject.name.Names;
+import io.druid.guice.JacksonConfigProvider;
 import io.druid.java.util.http.client.HttpClient;
 import io.airlift.airline.Command;
 import io.druid.curator.discovery.DiscoveryModule;
@@ -52,12 +53,14 @@ import io.druid.server.initialization.jetty.JettyServerInitializer;
 import io.druid.server.metrics.QueryCountStatsProvider;
 import io.druid.server.router.AvaticaConnectionBalancer;
 import io.druid.server.router.CoordinatorRuleManager;
+import io.druid.server.router.ManagementProxyConfig;
 import io.druid.server.router.QueryHostFinder;
 import io.druid.server.router.Router;
 import io.druid.server.router.TieredBrokerConfig;
 import io.druid.server.router.TieredBrokerHostSelector;
 import io.druid.server.router.TieredBrokerSelectorStrategiesProvider;
 import io.druid.server.router.TieredBrokerSelectorStrategy;
+import io.druid.server.router.setup.QueryProxyBehaviorConfig;
 import org.eclipse.jetty.server.Server;
 
 import java.util.List;
@@ -85,6 +88,7 @@ public class CliRouter extends ServerRunnable
         new QueryableModule(),
         new QueryRunnerFactoryModule(),
         new JettyHttpClientModule("druid.router.http", Router.class),
+        JettyHttpClientModule.global(),
         new Module()
         {
           @Override
@@ -96,6 +100,7 @@ public class CliRouter extends ServerRunnable
 
             JsonConfigProvider.bind(binder, "druid.router", TieredBrokerConfig.class);
             JsonConfigProvider.bind(binder, "druid.router.avatica.balancer", AvaticaConnectionBalancer.class);
+            JsonConfigProvider.bind(binder, "druid.router.managementProxy", ManagementProxyConfig.class);
 
             binder.bind(CoordinatorRuleManager.class);
             LifecycleModule.register(binder, CoordinatorRuleManager.class);
@@ -110,6 +115,7 @@ public class CliRouter extends ServerRunnable
 
             binder.bind(QueryCountStatsProvider.class).to(AsyncQueryForwardingServlet.class).in(LazySingleton.class);
             binder.bind(JettyServerInitializer.class).to(RouterJettyServerInitializer.class).in(LazySingleton.class);
+            binder.bind(AsyncQueryForwardingServlet.class).in(LazySingleton.class);
 
             Jerseys.addResource(binder, RouterResource.class);
 
@@ -123,6 +129,9 @@ public class CliRouter extends ServerRunnable
                     ImmutableList.of()
                 )
             ).in(LazySingleton.class);
+
+            JacksonConfigProvider.bind(binder, QueryProxyBehaviorConfig.CONFIG_KEY, QueryProxyBehaviorConfig.class,
+                new QueryProxyBehaviorConfig());
             LifecycleModule.registerKey(binder, Key.get(DiscoverySideEffectsProvider.Child.class));
           }
 

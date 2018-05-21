@@ -32,6 +32,7 @@ import io.druid.server.log.FilteredRequestLoggerProvider;
 import io.druid.server.log.LoggingRequestLoggerProvider;
 import io.druid.server.log.RequestLogger;
 import io.druid.server.log.RequestLoggerProvider;
+import io.druid.server.log.SQLMetadataQueryRequestLoggerProvider;
 
 import java.util.Arrays;
 import java.util.List;
@@ -61,7 +62,8 @@ public class QueryableModule implements DruidModule
                 FileRequestLoggerProvider.class,
                 LoggingRequestLoggerProvider.class,
                 ComposingRequestLoggerProvider.class,
-                FilteredRequestLoggerProvider.class
+                FilteredRequestLoggerProvider.class,
+                SQLMetadataQueryRequestLoggerProvider.class
             )
     );
   }
