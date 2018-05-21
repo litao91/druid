@@ -274,7 +274,6 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
                 "runningQuerySize(%d) >= maxRunningQueries(%d), wait for query to complete",
                 runningQueries.size(), proxyBehaviorConfigRef.get().getMaxRunningQueries()
                 ));
-
           notFull.await();
         }
         DateTime now = DateTimes.nowUtc();
@@ -701,12 +700,6 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
         runningQueryLock.unlock();
       }
 
-      try {
-        ((HttpOutput) this.res.getOutputStream()).reopen();
-      }
-      catch (Exception e) {
-        logger.error(e, "error");
-      }
       logger.info("Query %s removed from running queries", query.getId());
       super.onContent(proxyResponse, content, callback);
     }
