@@ -63,28 +63,19 @@ import org.eclipse.jetty.client.api.Result;
 import org.eclipse.jetty.client.util.BytesContentProvider;
 import org.eclipse.jetty.http.HttpMethod;
 import org.eclipse.jetty.proxy.AsyncProxyServlet;
+import org.eclipse.jetty.proxy.ProxyServlet;
 import org.eclipse.jetty.util.Callback;
 import org.eclipse.jetty.server.HttpOutput;
+import org.eclipse.jetty.http.HttpVersion;
+import org.eclipse.jetty.client.util.DeferredContentProvider;
 import org.joda.time.DateTime;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.AsyncContext;
-import javax.servlet.DispatcherType;
-import javax.servlet.RequestDispatcher;
-import javax.servlet.ServletContext;
-import javax.servlet.ServletInputStream;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
-import javax.servlet.http.Cookie;
-import javax.servlet.http.HttpSession;
-import javax.servlet.http.HttpUpgradeHandler;
-import javax.servlet.http.Part;
 import javax.ws.rs.core.MediaType;
 import java.io.IOException;
-import java.io.BufferedReader;
-import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -97,10 +88,14 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.Condition;
-import java.util.Enumeration;
-import java.util.Locale;
-import java.util.Collection;
-import java.security.Principal;
+
+
+import java.io.Closeable;
+import java.util.Iterator;
+
+import org.eclipse.jetty.client.AsyncContentProvider;
+import org.eclipse.jetty.client.api.ContentProvider;
+import org.eclipse.jetty.util.IteratingCallback;
 
 
 /**
@@ -108,6 +103,7 @@ import java.security.Principal;
  */
 public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements QueryCountStatsProvider
 {
+  private static final String CONTINUE_ACTION_ATTRIBUTE = ProxyServlet.class.getName() + ".continueAction";
   private static final EmittingLogger log = new EmittingLogger(AsyncQueryForwardingServlet.class);
   private static final Logger logger = new Logger(AsyncQueryForwardingServlet.class);
   @Deprecated // use SmileMediaTypes.APPLICATION_JACKSON_SMILE
@@ -288,7 +284,7 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
         }
         logger.debug("Asking query %s to run", queryStuff.getQuery().getId());
         runningQueries.put(queryStuff.getQuery().getId(), now.plus(timeout));
-        doService(new QueryForwardingRequestWrapper(queryStuff.getRequest()), queryStuff.getResponse());
+        sendProxyRequest(queryStuff.getRequest(), queryStuff.getResponse(), queryStuff.getProxyRequest());
       }
       catch (Exception e) {
         logger.error(e, "do Service error for query %s", queryStuff.getQuery().getId());
@@ -310,6 +306,68 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     catch (Exception e) {
       logger.warn(e, "Error stopping servlet");
     }
+  }
+
+  public Request prepareService(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException 
+  {
+    final int requestId = getRequestId(request);
+
+    String rewrittenTarget = rewriteTarget(request);
+
+    if (_log.isDebugEnabled()) {
+      StringBuffer uri = request.getRequestURL();
+      if (request.getQueryString() != null) {
+        uri.append("?").append(request.getQueryString());
+      }
+      if (_log.isDebugEnabled()) {
+        _log.debug("{} rewriting: {} -> {}", requestId, uri, rewrittenTarget);
+      }
+    }
+
+    if (rewrittenTarget == null) {
+      onProxyRewriteFailed(request, response);
+      return null;
+    }
+
+    final Request proxyRequest = getHttpClient().newRequest(rewrittenTarget)
+        .method(request.getMethod())
+        .version(HttpVersion.fromString(request.getProtocol()));
+
+    copyRequestHeaders(request, proxyRequest);
+
+    addProxyHeaders(request, proxyRequest);
+
+    final AsyncContext asyncContext = request.startAsync();
+    // We do not timeout the continuation, but the proxy request
+    asyncContext.setTimeout(0);
+    proxyRequest.timeout(getTimeout(), TimeUnit.MILLISECONDS);
+
+    if (hasContent(request)) {
+      if (expects100Continue(request)) {
+        DeferredContentProvider deferred = new DeferredContentProvider();
+        proxyRequest.content(deferred);
+        proxyRequest.attribute(CLIENT_REQUEST_ATTRIBUTE, request);
+        proxyRequest.attribute(CONTINUE_ACTION_ATTRIBUTE, (Runnable) () -> {
+          try {
+            ContentProvider provider = proxyRequestContent(request, response, proxyRequest);
+            new DelegatingContentProvider(request, proxyRequest, response, provider, deferred).iterate();
+          }
+          catch (Throwable failure) {
+            onClientRequestFailure(request, proxyRequest, response, failure);
+          }
+        });
+      } else {
+        proxyRequest.content(proxyRequestContent(request, response, proxyRequest));
+      }
+    }
+
+    // Since we can't see the request object on the remote side, we can't check whether the remote side actually
+    // performed an authorization check here, so always set this to true for the proxy servlet.
+    // If the remote node failed to perform an authorization check, PreResponseAuthorizationCheckFilter
+    // will log that on the remote node.
+    request.setAttribute(AuthConfig.DRUID_AUTHORIZATION_CHECKED, true);
+
+    return proxyRequest;
   }
 
   @Override
@@ -441,7 +499,7 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
       try {
         Query query = (Query) request.getAttribute(QUERY_ATTRIBUTE);
         logger.info("Adding query: %s to query queue, request: %s, response: %s", query.getId(), request.toString(), response.toString());
-        if (!queryQueue.add(query, request, response)) {
+        if (!queryQueue.add(query, request, response, this)) {
           response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
           response.setContentType(MediaType.APPLICATION_JSON);
           objectMapper.writeValue(
@@ -499,12 +557,6 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
         Throwables.propagate(e);
       }
     }
-
-    // Since we can't see the request object on the remote side, we can't check whether the remote side actually
-    // performed an authorization check here, so always set this to true for the proxy servlet.
-    // If the remote node failed to perform an authorization check, PreResponseAuthorizationCheckFilter
-    // will log that on the remote node.
-    clientRequest.setAttribute(AuthConfig.DRUID_AUTHORIZATION_CHECKED, true);
 
     super.sendProxyRequest(
         clientRequest,
@@ -747,440 +799,84 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     }
   }
 
-  private static class QueryForwardingRequestWrapper implements HttpServletRequest
+  private class DelegatingContentProvider extends IteratingCallback implements AsyncContentProvider.Listener
   {
-    private final HttpServletRequest realRequest;
-    private boolean asyncStarted = false;
-
-    public QueryForwardingRequestWrapper(HttpServletRequest realRequest)
-    {
-      this.realRequest = realRequest;
-    }
-    @Override
-    public String getAuthType()
-    {
-      return realRequest.getAuthType();
-    }
-
-    @Override
-    public Cookie[] getCookies()
-    {
-      return realRequest.getCookies();
-    }
-
-    @Override
-    public long getDateHeader(String name)
-    {
-      return realRequest.getDateHeader(name);
-    }
-
-    @Override
-    public String getHeader(String name)
-    {
-      return realRequest.getHeader(name);
-    }
-
-    @Override
-    public Enumeration<String> getHeaders(String name)
-    {
-      return realRequest.getHeaders(name);
-    }
-
-    @Override
-    public Enumeration<String> getHeaderNames()
-    {
-      return realRequest.getHeaderNames();
-    }
-
-    @Override
-    public int getIntHeader(String name)
-    {
-      return realRequest.getIntHeader(name);
-    }
-
-    @Override
-    public String getMethod()
-    {
-      return realRequest.getMethod();
-    }
-
-    @Override
-    public String getPathInfo()
-    {
-      return realRequest.getPathInfo();
-    }
-
-    @Override
-    public String getPathTranslated()
-    {
-      return realRequest.getPathTranslated();
-    }
-
-    @Override
-    public String getContextPath()
-    {
-      return realRequest.getContextPath();
-    }
-
-    @Override
-    public String getQueryString()
-    {
-      return realRequest.getQueryString();
-    }
-
-    @Override
-    public String getRemoteUser()
-    {
-      return realRequest.getRemoteUser();
-    }
-
-    @Override
-    public boolean isUserInRole(String role)
-    {
-      return realRequest.isUserInRole(role);
-    }
-
-    @Override
-    public Principal getUserPrincipal()
-    {
-      return realRequest.getUserPrincipal();
-    }
-
-    @Override
-    public String getRequestedSessionId()
-    {
-      return realRequest.getRequestedSessionId();
-    }
-
-    @Override
-    public String getRequestURI()
-    {
-      return realRequest.getRequestURI();
-    }
-
-    @Override
-    public StringBuffer getRequestURL()
-    {
-      return realRequest.getRequestURL();
-    }
-
-    @Override
-    public String getServletPath()
-    {
-      return realRequest.getServletPath();
-    }
-
-    @Override
-    public HttpSession getSession(boolean create)
-    {
-      return realRequest.getSession(create);
-    }
-
-    @Override
-    public HttpSession getSession()
-    {
-      return realRequest.getSession();
-    }
-
-    @Override
-    public String changeSessionId()
-    {
-      return realRequest.changeSessionId();
-    }
-
-    @Override
-    public boolean isRequestedSessionIdValid()
-    {
-      return realRequest.isRequestedSessionIdValid();
-    }
-
-    @Override
-    public boolean isRequestedSessionIdFromCookie()
-    {
-      return realRequest.isRequestedSessionIdFromCookie();
-    }
-
-    @Override
-    public boolean isRequestedSessionIdFromURL()
-    {
-      return realRequest.isRequestedSessionIdFromURL();
-    }
-
-    @Override
-    public boolean isRequestedSessionIdFromUrl()
-    {
-      return realRequest.isRequestedSessionIdFromUrl();
-    }
-
-    @Override
-    public boolean authenticate(HttpServletResponse response) throws IOException, ServletException
-    {
-      return realRequest.authenticate(response);
-    }
-
-    @Override
-    public void login(String username, String password) throws ServletException
-    {
-      realRequest.login(username, password);
-    }
-
-    @Override
-    public void logout() throws ServletException
-    {
-      realRequest.logout();
-    }
-
-    @Override
-    public Collection<Part> getParts() throws IOException, ServletException
-    {
-      return realRequest.getParts();
-    }
-
-    @Override
-    public Part getPart(String name) throws IOException, ServletException
-    {
-      return realRequest.getPart(name);
-    }
-
-    @Override
-    public <T extends HttpUpgradeHandler> T upgrade(Class<T> handlerClass) throws IOException, ServletException
-    {
-      return realRequest.upgrade(handlerClass);
-    }
-
-    @Override
-    public Object getAttribute(String name)
-    {
-      return realRequest.getAttribute(name);
-    }
-
-    @Override
-    public Enumeration<String> getAttributeNames()
-    {
-      return realRequest.getAttributeNames();
-    }
-
-    @Override
-    public String getCharacterEncoding()
-    {
-      return realRequest.getCharacterEncoding();
-    }
-
-    @Override
-    public void setCharacterEncoding(String env) throws UnsupportedEncodingException
-    {
-      realRequest.setCharacterEncoding(env);
-    }
-
-    @Override
-    public int getContentLength()
-    {
-      return realRequest.getContentLength();
-    }
-
-    @Override
-    public long getContentLengthLong()
-    {
-      return realRequest.getContentLengthLong();
-    }
-
-    @Override
-    public String getContentType()
-    {
-      return realRequest.getContentType();
-    }
-
-    @Override
-    public ServletInputStream getInputStream() throws IOException
-    {
-      return realRequest.getInputStream();
-    }
-
-    @Override
-    public String getParameter(String name)
-    {
-      return realRequest.getParameter(name);
-    }
-
-    @Override
-    public Enumeration<String> getParameterNames()
-    {
-      return realRequest.getParameterNames();
-    }
-
-    @Override
-    public String[] getParameterValues(String name)
-    {
-      return realRequest.getParameterValues(name);
-    }
-
-    @Override
-    public Map<String, String[]> getParameterMap()
-    {
-      return realRequest.getParameterMap();
-    }
-
-    @Override
-    public String getProtocol()
-    {
-      return realRequest.getProtocol();
-    }
-
-    @Override
-    public String getScheme()
-    {
-      return realRequest.getScheme();
-    }
-
-    @Override
-    public String getServerName()
-    {
-      return realRequest.getServerName();
-    }
-
-    @Override
-    public int getServerPort()
-    {
-      return realRequest.getServerPort();
-    }
-
-    @Override
-    public BufferedReader getReader() throws IOException
-    {
-      return realRequest.getReader();
-    }
-
-    @Override
-    public String getRemoteAddr()
-    {
-      return realRequest.getRemoteAddr();
-    }
-
-    @Override
-    public String getRemoteHost()
-    {
-      return realRequest.getRemoteHost();
-    }
-
-    @Override
-    public void setAttribute(String name, Object o)
-    {
-      realRequest.setAttribute(name, o);
-    }
-
-    @Override
-    public void removeAttribute(String name)
-    {
-      realRequest.removeAttribute(name);
-    }
-
-    @Override
-    public Locale getLocale()
-    {
-      return realRequest.getLocale();
-    }
-
-    @Override
-    public Enumeration<Locale> getLocales()
-    {
-      return realRequest.getLocales();
-    }
-
-    @Override
-    public boolean isSecure()
-    {
-      return realRequest.isSecure();
-    }
-
-    @Override
-    public RequestDispatcher getRequestDispatcher(String path)
-    {
-      return realRequest.getRequestDispatcher(path);
-    }
-
-    @Override
-    public String getRealPath(String path)
-    {
-      return realRequest.getRealPath(path);
-    }
-
-    @Override
-    public int getRemotePort()
-    {
-      return realRequest.getRemotePort();
-    }
-
-    @Override
-    public String getLocalName()
-    {
-      return realRequest.getLocalName();
-    }
-
-    @Override
-    public String getLocalAddr()
-    {
-      return realRequest.getLocalAddr();
-    }
-
-    @Override
-    public int getLocalPort()
-    {
-      return realRequest.getLocalPort();
-    }
-
-    @Override
-    public ServletContext getServletContext()
-    {
-      return realRequest.getServletContext();
-    }
-
-    @Override
-    public AsyncContext startAsync() throws IllegalStateException
-    {
-      asyncStarted = true;
-      if (realRequest.isAsyncStarted()) {
-        return realRequest.getAsyncContext();
-      } else {
-        return realRequest.startAsync();
+    private final HttpServletRequest clientRequest;
+    private final Request proxyRequest;
+    private final HttpServletResponse proxyResponse;
+    private final Iterator<ByteBuffer> iterator;
+    private final DeferredContentProvider deferred;
+
+    private DelegatingContentProvider(HttpServletRequest clientRequest, Request proxyRequest, HttpServletResponse proxyResponse, ContentProvider provider, DeferredContentProvider deferred)
+    {
+      this.clientRequest = clientRequest;
+      this.proxyRequest = proxyRequest;
+      this.proxyResponse = proxyResponse;
+      this.iterator = provider.iterator();
+      this.deferred = deferred;
+      if (provider instanceof AsyncContentProvider) {
+        ((AsyncContentProvider) provider).setListener(this);
       }
     }
 
     @Override
-    public AsyncContext startAsync(
-        ServletRequest servletRequest, ServletResponse servletResponse
-    ) throws IllegalStateException
+    protected Action process() throws Exception
     {
-      asyncStarted = true;
-      if (realRequest.isAsyncStarted()) {
-        return realRequest.getAsyncContext();
-      } else {
-        return realRequest.startAsync(servletRequest, servletResponse);
+      if (!iterator.hasNext()) {
+        return Action.SUCCEEDED;
+      }
+
+      ByteBuffer buffer = iterator.next();
+      if (buffer == null) {
+        return Action.IDLE;
+      }
+
+      deferred.offer(buffer, this);
+      return Action.SCHEDULED;
+    }
+
+    @Override
+    public void succeeded()
+    {
+      if (iterator instanceof Callback) {
+        ((Callback) iterator).succeeded();
+      }
+      super.succeeded();
+    }
+
+    @Override
+    protected void onCompleteSuccess()
+    {
+      try {
+        if (iterator instanceof Closeable) {
+          ((Closeable) iterator).close();
+        }
+        deferred.close();
+      }
+      catch (Throwable x) {
+        _log.ignore(x);
       }
     }
 
-    // Foll the outside functions here
     @Override
-    public boolean isAsyncStarted()
+    protected void onCompleteFailure(Throwable failure)
     {
-      return asyncStarted;
+      if (iterator instanceof Callback) {
+        ((Callback) iterator).failed(failure);
+      }
+      onClientRequestFailure(clientRequest, proxyRequest, proxyResponse, failure);
     }
 
     @Override
-    public boolean isAsyncSupported()
+    public boolean isNonBlocking()
     {
-      return realRequest.isAsyncSupported();
+      return true;
     }
 
     @Override
-    public AsyncContext getAsyncContext()
+    public void onContent()
     {
-      return realRequest.getAsyncContext();
-    }
-
-    @Override
-    public DispatcherType getDispatcherType()
-    {
-      return realRequest.getDispatcherType();
+      iterate();
     }
   }
 }

@@ -18,6 +18,8 @@
  */
 package io.druid.server.router;
 
+import java.io.IOException;
+
 import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
 import com.google.common.collect.Lists;
@@ -28,14 +30,18 @@ import io.druid.java.util.common.logger.Logger;
 import io.druid.metadata.EntryExistsException;
 import io.druid.query.Query;
 import io.druid.server.router.setup.QueryProxyBehaviorConfig;
+import io.druid.server.AsyncQueryForwardingServlet;
+import org.eclipse.jetty.client.api.Request;
 import org.joda.time.DateTime;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.servlet.ServletException;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
+
 
 public class QueryQueue
 {
@@ -59,8 +65,8 @@ public class QueryQueue
     notEmpty = lock.newCondition();
   }
 
-  public boolean add(final Query query, HttpServletRequest request, HttpServletResponse response)
-      throws EntryExistsException
+  public boolean add(final Query query, HttpServletRequest request, HttpServletResponse response, AsyncQueryForwardingServlet servlet)
+      throws EntryExistsException, ServletException, IOException
   {
     lock.lock();
     try {
@@ -85,9 +91,9 @@ public class QueryQueue
       );
       queries.add(query);
       logger.debug("Starting async on request");
-      // Hack the statemachine of jetty. The request's state must be in async for the
-      // Jetty to wait for the response
-      request.startAsync();
+
+      Request proxyRequest = servlet.prepareService(request, response);
+      queryMap.get(query.getId()).setProxyRequest(proxyRequest);
 
       notEmpty.signal();
       return true;
@@ -118,6 +124,7 @@ public class QueryQueue
     final DateTime createdDate;
     final HttpServletRequest request;
     final HttpServletResponse response;
+    Request proxyRequest;
 
     private QueryStuff(
         Query query,
@@ -130,6 +137,11 @@ public class QueryQueue
       this.createdDate = createdDate;
       this.request = request;
       this.response = response;
+    }
+
+    public void setProxyRequest(Request request) 
+    {
+      this.proxyRequest = request;
     }
 
     public Query getQuery()
@@ -150,6 +162,11 @@ public class QueryQueue
     public HttpServletResponse getResponse()
     {
       return response;
+    }
+
+    public Request getProxyRequest() 
+    {
+      return proxyRequest;
     }
   }
 }

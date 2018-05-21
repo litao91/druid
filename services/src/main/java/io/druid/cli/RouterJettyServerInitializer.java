@@ -110,13 +110,11 @@ public class RouterJettyServerInitializer implements JettyServerInitializer
     JettyServerInitUtils.addExtensionFilters(root, injector);
 
     // Check that requests were authorized before sending responses
-    /*
     AuthenticationUtils.addPreResponseAuthorizationCheckFilter(
         root,
         authenticators,
         jsonMapper
     );
-    */
 
     // Can't use '/*' here because of Guice conflicts with AsyncQueryForwardingServlet path
     root.addFilter(GuiceFilter.class, "/status/*", null);
