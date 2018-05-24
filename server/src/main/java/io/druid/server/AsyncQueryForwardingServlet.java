@@ -219,7 +219,6 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     this.queryQueue = new QueryQueue(this.proxyBehaviorConfigRef);
     runningQueryLock = new ReentrantLock();
     notFull = runningQueryLock.newCondition();
-    logger.info("AsyncQueryForwardingServlet created");
   }
 
   @Override
@@ -304,7 +303,7 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     }
   }
 
-  public Request prepareService(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException 
+  public Request prepareService(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException
   {
     final int requestId = getRequestId(request);
 

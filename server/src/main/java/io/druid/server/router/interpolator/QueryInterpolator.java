@@ -27,7 +27,8 @@ import io.druid.server.AsyncQueryForwardingServlet;
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
 @JsonSubTypes(value = {
-    @JsonSubTypes.Type(name = "duration", value = QueryIntervalDurationInterpolator.class)
+    @JsonSubTypes.Type(name = "duration", value = QueryIntervalDurationInterpolator.class),
+    @JsonSubTypes.Type(name = "throttle", value = QueryThrottleInterpolator.class)
 })
 public interface QueryInterpolator
 {

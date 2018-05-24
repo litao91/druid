@@ -20,6 +20,7 @@
 package io.druid.server.http;
 
 import com.google.inject.Inject;
+import com.google.common.base.Supplier;
 import com.sun.jersey.spi.container.ResourceFilters;
 import io.druid.client.selector.Server;
 import io.druid.server.router.TieredBrokerHostSelector;
@@ -27,6 +28,7 @@ import io.druid.server.http.security.ConfigResourceFilter;
 import io.druid.server.AsyncQueryForwardingServlet;
 import io.druid.server.http.security.StateResourceFilter;
 import io.druid.server.router.QueryQueue;
+import io.druid.server.router.setup.QueryProxyBehaviorConfig;
 
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
@@ -45,11 +47,18 @@ public class RouterResource
   private final TieredBrokerHostSelector tieredBrokerHostSelector;
   private final AsyncQueryForwardingServlet servlet;
 
+  private final Supplier<QueryProxyBehaviorConfig> proxyBehaviorConfigRef;
+
   @Inject
-  public RouterResource(TieredBrokerHostSelector tieredBrokerHostSelector, AsyncQueryForwardingServlet servlet)
+  public RouterResource(
+      TieredBrokerHostSelector tieredBrokerHostSelector,
+      AsyncQueryForwardingServlet servlet,
+      final Supplier<QueryProxyBehaviorConfig> proxyConfigRef
+  )
   {
     this.tieredBrokerHostSelector = tieredBrokerHostSelector;
     this.servlet = servlet;
+    this.proxyBehaviorConfigRef = proxyConfigRef;
   }
 
   @GET
@@ -85,5 +94,14 @@ public class RouterResource
   public List<QueryQueue.QueryStuff> getPendingQueries()
   {
     return servlet.getPendingQueries();
+  }
+
+  @GET
+  @Path("/proxyBehaviorConfig")
+  @Produces(MediaType.APPLICATION_JSON)
+  @ResourceFilters(StateResourceFilter.class)
+  public QueryProxyBehaviorConfig getQueryBehaviorConfig()
+  {
+    return proxyBehaviorConfigRef.get();
   }
 }
