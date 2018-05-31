@@ -154,7 +154,7 @@ public class HeapMemoryTaskStorage implements TaskStorage
     long now = System.currentTimeMillis();
     long twoDaysInMillis = 1000 * 60 * 60 * 12;
     List<TaskStuff> oldTasks = tasks.values().stream().filter(taskStuff -> taskStuff.getStatus().isComplete()
-        && now - taskStuff.getCreatedDate().getMillis() > twoDaysInMillis).collect(Collectors.toList());
+        && now - taskStuff.getCreatedDate().getMillis() - taskStuff.getStatus().getDuration() > twoDaysInMillis).collect(Collectors.toList());
     int count = 0;
     for (TaskStuff t : oldTasks) {
       count++;
