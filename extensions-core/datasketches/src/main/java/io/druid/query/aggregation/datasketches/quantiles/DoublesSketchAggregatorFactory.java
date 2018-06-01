@@ -21,6 +21,7 @@ package io.druid.query.aggregation.datasketches.quantiles;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.google.common.collect.Ordering;
 import io.druid.java.util.common.IAE;
 import com.yahoo.sketches.Util;
 import com.yahoo.sketches.quantiles.DoublesSketch;
@@ -121,14 +122,11 @@ public class DoublesSketchAggregatorFactory extends AggregatorFactory
     return DoublesSketchOperations.deserialize(object);
   }
 
-  public static final Comparator<DoublesSketch> COMPARATOR = new Comparator<DoublesSketch>()
-  {
-    @Override
-    public int compare(DoublesSketch a, DoublesSketch b)
-    {
-      return Long.compare(a.getN(), b.getN());
-    }
-  };
+  public static final Comparator<DoublesSketch> COMPARATOR = Ordering.from((Comparator) (o1, o2) -> {
+    DoublesSketch a = (DoublesSketch) o1;
+    DoublesSketch b = (DoublesSketch) o2;
+    return Long.compare(a.getN(), b.getN());
+  }).nullsFirst();
 
   @Override
   public Comparator<DoublesSketch> getComparator()
