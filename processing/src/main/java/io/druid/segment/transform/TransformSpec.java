@@ -44,17 +44,20 @@ import java.util.Set;
  */
 public class TransformSpec
 {
-  public static final TransformSpec NONE = new TransformSpec(null, null);
+  public static final TransformSpec NONE = new TransformSpec(null, null, null);
 
   private final DimFilter filter;
   private final List<Transform> transforms;
+  private final List<Split> splits;
 
   @JsonCreator
   public TransformSpec(
+      @JsonProperty("splits") final List<Split> splits,
       @JsonProperty("filter") final DimFilter filter,
       @JsonProperty("transforms") final List<Transform> transforms
   )
   {
+    this.splits = splits;
     this.filter = filter;
     this.transforms = transforms == null ? ImmutableList.of() : transforms;
 
@@ -95,6 +98,12 @@ public class TransformSpec
     return transforms;
   }
 
+  @JsonProperty
+  public List<Split> getSplits()
+  {
+    return splits;
+  }
+
   public <T> InputRowParser<T> decorate(final InputRowParser<T> parser)
   {
     // Always decorates, even if the transformSpec is a no-op. This is so fromInputRowParser can insist that the
@@ -120,6 +129,11 @@ public class TransformSpec
   public Transformer toTransformer()
   {
     return new Transformer(this, null);
+  }
+
+  public Splitter toSplitter()
+  {
+    return new Splitter(this);
   }
 
   /**
