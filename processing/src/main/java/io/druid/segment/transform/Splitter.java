@@ -37,18 +37,26 @@ public class Splitter
   }
 
   @Nullable
-  public List<InputRow> split(@Nullable final InputRow row)
+  public List<InputRow> split(@Nullable final InputRow inputRow)
   {
     if (splits.isEmpty()) {
-      return ImmutableList.of(row);
+      return ImmutableList.of(inputRow);
     }
 
-    List<InputRow> out = Lists.newArrayList();
+    List<InputRow> out = ImmutableList.of(inputRow);
 
-    for (RowSplitFunction s : splits) {
-      Iterable<InputRow> rows = s.eval(row);
-      for (InputRow r : rows) {
-        out.add(r);
+    int last_out_num = -1;
+    while (last_out_num != out.size()) {
+      last_out_num = out.size();
+      for (RowSplitFunction s : splits) {
+        List<InputRow> newOut = Lists.newArrayList();
+        for (InputRow row : out) {
+          Iterable<InputRow> rows = s.eval(row);
+          for (InputRow r : rows) {
+            newOut.add(r);
+          }
+        }
+        out = newOut;
       }
     }
     return out;
