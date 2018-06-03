@@ -50,6 +50,13 @@ public class TransformSpec
   private final List<Transform> transforms;
   private final List<Split> splits;
 
+  public TransformSpec(final DimFilter filter, final List<Transform> transforms)
+  {
+    this.splits = ImmutableList.of();
+    this.transforms = transforms;
+    this.filter = filter;
+  }
+
   @JsonCreator
   public TransformSpec(
       @JsonProperty("splits") final List<Split> splits,

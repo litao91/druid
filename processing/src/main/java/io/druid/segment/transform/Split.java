@@ -22,13 +22,22 @@ package io.druid.segment.transform;
  * A row split is part of a {@link TransformSpec}. Split allow splitting a input row to multiple
  * rows. The splitted dimension will be of the same name as the original input row.
  */
+
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+@JsonSubTypes(value = {
+    @JsonSubTypes.Type(name = "separator", value = SeparatorSplit.class)
+})
 public interface Split
 {
   /**
    * Return the field name for this split to apply to
+   *
    * @return
    */
-  String getName();
+  String getFieldName();
 
   /**
    * Returns the function for this transform

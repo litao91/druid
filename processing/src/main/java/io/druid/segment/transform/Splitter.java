@@ -18,14 +18,11 @@
  */
 package io.druid.segment.transform;
 
-import com.google.common.base.Function;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import io.druid.data.input.InputRow;
-import io.druid.java.util.common.guava.Sequences;
 
 import javax.annotation.Nullable;
-import java.util.ArrayList;
 import java.util.List;
 
 public class Splitter
@@ -34,13 +31,13 @@ public class Splitter
 
   Splitter(final TransformSpec transformSpec)
   {
-    for(Split s : transformSpec.getSplits()) {
+    for (Split s : transformSpec.getSplits()) {
       splits.add(s.getSplitRowFunction());
     }
   }
 
   @Nullable
-  public Iterable<InputRow> split(@Nullable final InputRow row)
+  public List<InputRow> split(@Nullable final InputRow row)
   {
     if (splits.isEmpty()) {
       return ImmutableList.of(row);
@@ -48,9 +45,9 @@ public class Splitter
 
     List<InputRow> out = Lists.newArrayList();
 
-    for (RowSplitFunction s: splits) {
+    for (RowSplitFunction s : splits) {
       Iterable<InputRow> rows = s.eval(row);
-      for(InputRow r: rows) {
+      for (InputRow r : rows) {
         out.add(r);
       }
     }
