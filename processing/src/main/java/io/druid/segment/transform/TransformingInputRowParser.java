@@ -31,12 +31,14 @@ public class TransformingInputRowParser<T> implements InputRowParser<T>
   private final InputRowParser<T> parser;
   private final TransformSpec transformSpec;
   private final Transformer transformer;
+  private final Splitter splitter;
 
   public TransformingInputRowParser(final InputRowParser<T> parser, final TransformSpec transformSpec)
   {
     this.parser = parser;
     this.transformSpec = transformSpec;
     this.transformer = transformSpec.toTransformer();
+    this.splitter = transformSpec.toSplitter();
   }
 
   public InputRowParser<T> getParser()
@@ -47,7 +49,9 @@ public class TransformingInputRowParser<T> implements InputRowParser<T>
   @Override
   public List<InputRow> parseBatch(final T row)
   {
-    return parser.parseBatch(row).stream().map(transformer::transform).collect(Collectors.toList());
+    return parser.parseBatch(row).stream()
+                 .flatMap(r -> splitter.split(r).stream())
+                 .map(transformer::transform).collect(Collectors.toList());
   }
 
   @Override

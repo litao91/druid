@@ -34,10 +34,12 @@ import io.druid.query.filter.AndDimFilter;
 import io.druid.query.filter.SelectorDimFilter;
 import io.druid.segment.TestHelper;
 import io.druid.segment.transform.ExpressionTransform;
+import io.druid.segment.transform.SeparatorSplit;
 import io.druid.segment.transform.TransformSpec;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.util.List;
 import java.util.Map;
 
 public class TransformSpecTest
@@ -66,6 +68,14 @@ public class TransformSpecTest
       .put("a", 2.0)
       .put("b", 4L)
       .build();
+
+  private static final Map<String, Object> ROW3 = ImmutableMap.<String, Object>builder()
+      .put("x", "foo,bar,hello,world")
+      .put("y", "b|ac|zd")
+      .put("a", 2.0)
+      .put("b", 4L)
+      .build();
+
 
   @Test
   public void testTransforms()
@@ -180,9 +190,40 @@ public class TransformSpecTest
   }
 
   @Test
+  public void testSeparatorSplitter()
+  {
+    final TransformSpec transformSpec = new TransformSpec(
+        ImmutableList.of(
+            new SeparatorSplit("x", ","),
+            new SeparatorSplit("y", "\\|")
+        ),
+        null,
+        null);
+    InputRowParser<Map<String, Object>> parser = transformSpec.decorate(PARSER);
+    final List<InputRow> rows = parser.parseBatch(ROW3);
+    for (InputRow r: rows) {
+      System.out.println("x: " + r.getRaw("x") + ", y:" + r.getRaw("y"));
+    }
+    Assert.assertEquals(12, rows.size());
+    Assert.assertEquals("foo", rows.get(0).getRaw("x"));
+    Assert.assertEquals("b", rows.get(0).getRaw("y"));
+    Assert.assertEquals("foo", rows.get(1).getRaw("x"));
+    Assert.assertEquals("ac", rows.get(1).getRaw("y"));
+    Assert.assertEquals("foo", rows.get(2).getRaw("x"));
+    Assert.assertEquals("zd", rows.get(2).getRaw("y"));
+    Assert.assertEquals("bar", rows.get(3).getRaw("x"));
+    Assert.assertEquals("world", rows.get(11).getRaw("x"));
+    Assert.assertEquals("zd", rows.get(11).getRaw("y"));
+  }
+
+  @Test
   public void testSerde() throws Exception
   {
     final TransformSpec transformSpec = new TransformSpec(
+        ImmutableList.of(
+            new SeparatorSplit("test", ","),
+            new SeparatorSplit("test2", "|")
+        ),
         new AndDimFilter(
             ImmutableList.of(
                 new SelectorDimFilter("x", "foo", null),
@@ -196,10 +237,13 @@ public class TransformSpecTest
         )
     );
 
+
     final ObjectMapper jsonMapper = TestHelper.makeJsonMapper();
+    String deserialized = jsonMapper.writeValueAsString(transformSpec);
+
     Assert.assertEquals(
         transformSpec,
-        jsonMapper.readValue(jsonMapper.writeValueAsString(transformSpec), TransformSpec.class)
+        jsonMapper.readValue(deserialized, TransformSpec.class)
     );
   }
 }
