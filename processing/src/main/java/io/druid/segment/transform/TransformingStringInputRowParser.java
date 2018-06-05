@@ -31,6 +31,7 @@ import java.util.stream.Collectors;
 public class TransformingStringInputRowParser extends StringInputRowParser
 {
   private final TransformSpec transformSpec;
+  private final Splitter splitter;
   private final Transformer transformer;
 
   public TransformingStringInputRowParser(
@@ -42,12 +43,15 @@ public class TransformingStringInputRowParser extends StringInputRowParser
     super(parseSpec, encoding);
     this.transformSpec = transformSpec;
     this.transformer = transformSpec.toTransformer();
+    this.splitter = transformSpec.toSplitter();
   }
 
   @Override
   public List<InputRow> parseBatch(final ByteBuffer input)
   {
-    return super.parseBatch(input).stream().map(transformer::transform).collect(Collectors.toList());
+    return super.parseBatch(input).stream()
+                .flatMap(r -> splitter.split(r).stream())
+                .map(transformer::transform).collect(Collectors.toList());
   }
 
   @Nullable
