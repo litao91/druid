@@ -1,0 +1,58 @@
+{
+  "dataSource": "kafka_ad_abtest_realtime",
+  "metricsSpec": [
+    {
+      "type": "count",
+      "name": "count"
+    }
+  ],
+  "granularitySpec": {
+    "queryGranularity": "fifteen_minute",
+    "segmentGranularity": "hour",
+    "type": "uniform"
+  },
+  "transformSpec": {
+    "filter": null,
+    "splits": [
+      {
+        "fieldName": "vid",
+        "separator": ",",
+        "type": "separator"
+      }
+    ],
+    "transforms": []
+  },
+  "parser": {
+    "type": "string",
+    "parseSpec": {
+      "format": "json",
+      "timestampSpec": {
+        "column": "at",
+        "format": "posix"
+      },
+      "dimensionsSpec": {
+        "dimensions": [
+          "vid"
+        ]
+      },
+      "transformSpec": {},
+      "columns": [
+        "vid",
+        "at"
+      ]
+    }
+  }
+},
+"tuningConfig": {
+"type": "realtime",
+"windowPeriod": "PT40M",
+"intermediatePersistPeriod": "PT10M",
+"buildV9Directly": true,
+"maxRowsInMemory": "300000"
+}
+},
+"properties": {
+"task.partitions": "5",
+"task.replicants": "1",
+"topicPattern": "ad_log"
+}
