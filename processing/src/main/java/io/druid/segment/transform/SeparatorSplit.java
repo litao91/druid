@@ -21,6 +21,7 @@ package io.druid.segment.transform;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import io.druid.data.input.InputRow;
@@ -60,8 +61,11 @@ public class SeparatorSplit implements Split
   public RowSplitFunction getSplitRowFunction()
   {
     return row -> {
-      List<InputRow> splittedRows = Lists.newArrayList();
       List<String> strings = Rows.objectToStrings(row.getRaw(fieldName));
+      if (strings.isEmpty()) {
+        return ImmutableList.of(row);
+      }
+      List<InputRow> splittedRows = Lists.newArrayList();
       for (String str : strings) {
         for (String splitted : str.split(separator)) {
           splittedRows.add(new ShadowInputRow(row, ImmutableMap.of(fieldName, splitted)));

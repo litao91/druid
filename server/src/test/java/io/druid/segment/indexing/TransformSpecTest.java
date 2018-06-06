@@ -22,6 +22,7 @@ package io.druid.segment.indexing;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.io.Files;
 import io.druid.data.input.InputRow;
 import io.druid.data.input.impl.DimensionsSpec;
 import io.druid.data.input.impl.InputRowParser;
@@ -39,6 +40,10 @@ import io.druid.segment.transform.TransformSpec;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
 import java.util.List;
 import java.util.Map;
 
@@ -198,10 +203,11 @@ public class TransformSpecTest
             new SeparatorSplit("y", "\\|")
         ),
         null,
-        null);
+        null
+    );
     InputRowParser<Map<String, Object>> parser = transformSpec.decorate(PARSER);
     final List<InputRow> rows = parser.parseBatch(ROW3);
-    for (InputRow r: rows) {
+    for (InputRow r : rows) {
       System.out.println("x: " + r.getRaw("x") + ", y:" + r.getRaw("y"));
     }
     Assert.assertEquals(12, rows.size());
@@ -245,5 +251,33 @@ public class TransformSpecTest
         transformSpec,
         jsonMapper.readValue(deserialized, TransformSpec.class)
     );
+  }
+
+  @Test
+  public void fullParsingTest() throws Exception
+  {
+    ObjectMapper mapper = TestHelper.makeJsonMapper();
+    String datasourceConfig = readFileFromClasspathAsString("test_datasource.json");
+    DataSchema schema = mapper.readValue(datasourceConfig, DataSchema.class);
+    InputRowParser parser = schema.getParser();
+    String data1 = readFileFromClasspathAsString("testdata.json");
+    List<InputRow> rows1 = parser.parseBatch(ByteBuffer.wrap(data1.getBytes("UTF-8")));
+    Assert.assertEquals(1, rows1.size());
+
+    String data2 = readFileFromClasspathAsString("testdata2.json");
+    List<InputRow> rows2 = parser.parseBatch(ByteBuffer.wrap(data2.getBytes("UTF-8")));
+    Assert.assertEquals(1, rows2.size());
+
+    String data3 = readFileFromClasspathAsString("testdata3.json");
+    List<InputRow> rows3 = parser.parseBatch(ByteBuffer.wrap(data3.getBytes("UTF-8")));
+    Assert.assertEquals(24, rows3.size());
+  }
+
+  public final static String readFileFromClasspathAsString(String fileName) throws IOException
+  {
+    return Files.asCharSource(
+        new File(TransformSpecTest.class.getClassLoader().getResource(fileName).getFile()),
+        Charset.forName("UTF-8")
+    ).read();
   }
 }
