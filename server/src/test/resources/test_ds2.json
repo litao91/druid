@@ -1,0 +1,80 @@
+{
+  "dataSource": "ad_union_abtest",
+  "granularitySpec": {
+    "queryGranularity": "minute",
+    "segmentGranularity": "hour",
+    "type": "uniform",
+    "intervals": [
+      "2018-06-08T11:00:00+08:00/2018-06-08T12:00:00+08:00"
+    ]
+  },
+  "transformSpec": {
+    "filter": null,
+    "splits": [
+      {
+        "fieldName": "vid",
+        "separator": ",",
+        "type": "separator"
+      }
+    ],
+    "transforms": []
+  },
+  "metricsSpec": [
+    {
+      "name": "count",
+      "type": "count"
+    },
+    {
+      "fieldName": "ttdsp_price",
+      "name": "ttdsp_price",
+      "type": "longSum"
+    },
+    {
+      "fieldName": "bid",
+      "name": "bid",
+      "type": "longSum"
+    },
+    {
+      "fieldName": "cpa_bid",
+      "name": "cpa_bid",
+      "type": "longSum"
+    },
+    {
+      "fieldName": "total_latency",
+      "name": "total_latency",
+      "type": "longSum"
+    },
+    {
+      "fieldName": "union_predict_latency",
+      "name": "union_predict_latency",
+      "type": "longSum"
+    },
+    {
+      "fieldName": "app_conversion_rate",
+      "name": "app_conversion_rate",
+      "type": "doubleSum"
+    },
+    {
+      "fieldName": "ctr",
+      "name": "ctr",
+      "type": "doubleSum"
+    }
+  ],
+  "parser": {
+    "parseSpec": {
+      "dimensionsSpec": {
+        "dimensions": [
+          "vid",
+          "image_mode",
+          "fraud_type"
+        ]
+      },
+      "format": "json",
+      "timestampSpec": {
+        "column": "at",
+        "format": "posix"
+      }
+    },
+    "type": "string"
+  }
+}

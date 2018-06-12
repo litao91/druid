@@ -273,6 +273,19 @@ public class TransformSpecTest
     Assert.assertEquals(24, rows3.size());
   }
 
+  @Test
+  public void fullParsingTest2() throws Exception
+  {
+    ObjectMapper mapper = TestHelper.makeJsonMapper();
+    String datasourceConfig = readFileFromClasspathAsString("test_ds2.json");
+    DataSchema schema = mapper.readValue(datasourceConfig, DataSchema.class);
+
+    String data = readFileFromClasspathAsString("ds2_testdata.json");
+    InputRowParser parser = schema.getParser();
+    List<InputRow> row = parser.parseBatch(ByteBuffer.wrap(data.getBytes("UTF-8")));
+    Assert.assertEquals(8, row.size());
+  }
+
   public final static String readFileFromClasspathAsString(String fileName) throws IOException
   {
     return Files.asCharSource(
