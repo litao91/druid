@@ -122,6 +122,10 @@ public class StatusResource
     @JsonProperty
     public Map<String, String> getProperties()
     {
+      if (injector == null) {
+        return ImmutableMap.of();
+      }
+
       final StartupLoggingConfig startupLoggingConfig = injector.getInstance(StartupLoggingConfig.class);
       final Properties props = injector.getInstance(Properties.class);
       final Set<String> maskProperties = Sets.newHashSet(startupLoggingConfig.getMaskProperties());
@@ -143,6 +147,10 @@ public class StatusResource
     @JsonProperty
     public Map<String, Number> getDirectMemoryMetrics()
     {
+      if (injector == null) {
+        return ImmutableMap.of();
+      }
+
       ImmutableMap.Builder builder = ImmutableMap.builder();
       for (BufferPoolMXBean pool : ManagementFactory.getPlatformMXBeans(BufferPoolMXBean.class)) {
         builder.put("jvm/bufferpool/capacity", pool.getTotalCapacity());
@@ -155,6 +163,10 @@ public class StatusResource
     @JsonProperty
     public Map<String, Number> getJvmMemMetrics()
     {
+      if (injector == null) {
+        return ImmutableMap.of();
+      }
+
       ImmutableMap.Builder builder = ImmutableMap.builder();
       final Map<String, MemoryUsage> usages = ImmutableMap.of(
           "heap", ManagementFactory.getMemoryMXBean().getHeapMemoryUsage(),
