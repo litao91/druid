@@ -21,31 +21,52 @@ package io.druid.server;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Ordering;
+import com.google.common.collect.Sets;
+import com.google.inject.Inject;
+import com.google.inject.Injector;
 import com.sun.jersey.spi.container.ResourceFilters;
 import io.druid.initialization.DruidModule;
 import io.druid.initialization.Initialization;
 import io.druid.java.util.common.StringUtils;
 import io.druid.server.http.security.StateResourceFilter;
+import io.druid.server.log.StartupLoggingConfig;
 
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
+import java.lang.management.BufferPoolMXBean;
+import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryPoolMXBean;
+import java.lang.management.MemoryType;
+import java.lang.management.MemoryUsage;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
 
 /**
  */
 @Path("/status")
 public class StatusResource
 {
+
+  @Inject
+  private Injector injector;
+
   @GET
   @ResourceFilters(StateResourceFilter.class)
   @Produces(MediaType.APPLICATION_JSON)
   public Status doGet()
   {
-    return new Status(Initialization.getLoadedImplementations(DruidModule.class));
+    return new Status(
+        Initialization.getLoadedImplementations(DruidModule.class),
+        injector
+    );
   }
 
   /**
@@ -65,12 +86,14 @@ public class StatusResource
     final String version;
     final List<ModuleVersion> modules;
     final Memory memory;
+    final Injector injector;
 
-    public Status(Collection<DruidModule> modules)
+    public Status(Collection<DruidModule> modules, Injector injector)
     {
       this.version = getDruidVersion();
       this.modules = getExtensionVersions(modules);
       this.memory = new Memory(Runtime.getRuntime());
+      this.injector = injector;
     }
 
     private String getDruidVersion()
@@ -94,6 +117,68 @@ public class StatusResource
     public Memory getMemory()
     {
       return memory;
+    }
+
+    @JsonProperty
+    public Map<String, String> getProperties()
+    {
+      final StartupLoggingConfig startupLoggingConfig = injector.getInstance(StartupLoggingConfig.class);
+      final Properties props = injector.getInstance(Properties.class);
+      final Set<String> maskProperties = Sets.newHashSet(startupLoggingConfig.getMaskProperties());
+      ImmutableMap.Builder builder = ImmutableMap.builder();
+
+      for (String propertyName : Ordering.natural().sortedCopy(props.stringPropertyNames())) {
+        String property = props.getProperty(propertyName);
+        for (String masked : maskProperties) {
+          if (propertyName.contains(masked)) {
+            property = "<masked>";
+            break;
+          }
+        }
+        builder.put(propertyName, property);
+      }
+      return builder.build();
+    }
+
+    @JsonProperty
+    public Map<String, Number> getDirectMemoryMetrics()
+    {
+      ImmutableMap.Builder builder = ImmutableMap.builder();
+      for (BufferPoolMXBean pool : ManagementFactory.getPlatformMXBeans(BufferPoolMXBean.class)) {
+        builder.put("jvm/bufferpool/capacity", pool.getTotalCapacity());
+        builder.put("jvm/bufferpool/used", pool.getMemoryUsed());
+        builder.put("jvm/bufferpool/count", pool.getCount());
+      }
+      return builder.build();
+    }
+
+    @JsonProperty
+    public Map<String, Number> getJvmMemMetrics()
+    {
+      ImmutableMap.Builder builder = ImmutableMap.builder();
+      final Map<String, MemoryUsage> usages = ImmutableMap.of(
+          "heap", ManagementFactory.getMemoryMXBean().getHeapMemoryUsage(),
+          "nonheap", ManagementFactory.getMemoryMXBean().getNonHeapMemoryUsage()
+      );
+      for (Map.Entry<String, MemoryUsage> entry : usages.entrySet()) {
+        final String kind = entry.getKey();
+        final MemoryUsage usage = entry.getValue();
+        builder.put("jvm/mem/max", usage.getMax());
+        builder.put("jvm/mem/committed", usage.getCommitted());
+        builder.put("jvm/mem/used", usage.getUsed());
+        builder.put("jvm/mem/init", usage.getInit());
+      }
+
+      // jvm/pool
+      for (MemoryPoolMXBean pool : ManagementFactory.getMemoryPoolMXBeans()) {
+        final String kind = pool.getType() == MemoryType.HEAP ? "heap" : "nonheap";
+        final MemoryUsage usage = pool.getUsage();
+        builder.put("jvm/pool/max", usage.getMax());
+        builder.put("jvm/pool/committed", usage.getCommitted());
+        builder.put("jvm/pool/used", usage.getUsed());
+        builder.put("jvm/pool/init", usage.getInit());
+      }
+      return builder.build();
     }
 
     @Override
