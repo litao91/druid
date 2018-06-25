@@ -20,8 +20,10 @@
 package io.druid.indexing.overlord;
 
 import com.google.common.base.Optional;
+import com.google.common.base.Supplier;
 import com.google.common.base.Throwables;
 import com.google.inject.Inject;
+import io.druid.common.guava.DSuppliers;
 import io.druid.java.util.emitter.EmittingLogger;
 import io.druid.java.util.emitter.service.ServiceEmitter;
 import io.druid.client.indexing.IndexingService;
@@ -56,12 +58,21 @@ public class TaskMaster
   private final TaskActionClientFactory taskActionClientFactory;
   private final SupervisorManager supervisorManager;
 
-  private final AtomicReference<Lifecycle> leaderLifecycleRef = new AtomicReference<>(null);
-
   private volatile TaskRunner taskRunner;
   private volatile TaskQueue taskQueue;
 
   private static final EmittingLogger log = new EmittingLogger(TaskMaster.class);
+
+
+  private final AtomicReference<Boolean> isLeaderRef = new AtomicReference<>(false);
+  private final Supplier<Boolean> isLeaderSupplier = DSuppliers.of(isLeaderRef);
+
+  private final TaskLockbox taskLockbox;
+  private final TaskQueueConfig taskQueueConfig;
+  private final TaskRunnerFactory runnerFactory;
+  private final TaskStorage taskStorage;
+  private final ServiceEmitter emitter;
+  private final OverlordHelperManager overlordHelperManager;
 
   @Inject
   public TaskMaster(
@@ -87,61 +98,25 @@ public class TaskMaster
     final DruidNode node = coordinatorOverlordServiceConfig.getOverlordService() == null ? selfNode :
                            selfNode.withService(coordinatorOverlordServiceConfig.getOverlordService());
 
+    this.taskLockbox = taskLockbox;
+    this.taskQueueConfig = taskQueueConfig;
+    this.runnerFactory = runnerFactory;
+    this.taskStorage = taskStorage;
+    this.emitter = emitter;
+    this.overlordHelperManager = overlordHelperManager;
+
     this.leadershipListener = new DruidLeaderSelector.Listener()
     {
       @Override
       public void becomeLeader()
       {
-        giant.lock();
-
         // I AM THE MASTER OF THE UNIVERSE.
         log.info("By the power of Grayskull, I have the power!");
 
+        giant.lock();
         try {
-          taskLockbox.syncFromStorage();
-          taskRunner = runnerFactory.build();
-          taskQueue = new TaskQueue(
-              taskQueueConfig,
-              taskStorage,
-              taskRunner,
-              taskActionClientFactory,
-              taskLockbox,
-              emitter
-          );
-
-          // Sensible order to start stuff:
-          final Lifecycle leaderLifecycle = new Lifecycle();
-          if (leaderLifecycleRef.getAndSet(leaderLifecycle) != null) {
-            log.makeAlert("TaskMaster set a new Lifecycle without the old one being cleared!  Race condition")
-               .emit();
-          }
-
-          leaderLifecycle.addManagedInstance(taskRunner);
-          leaderLifecycle.addManagedInstance(taskQueue);
-          leaderLifecycle.addManagedInstance(supervisorManager);
-          leaderLifecycle.addManagedInstance(overlordHelperManager);
-
-          leaderLifecycle.addHandler(
-              new Lifecycle.Handler()
-              {
-                @Override
-                public void start() throws Exception
-                {
-                  serviceAnnouncer.announce(node);
-                }
-
-                @Override
-                public void stop()
-                {
-                  serviceAnnouncer.unannounce(node);
-                }
-              }
-          );
-
-          leaderLifecycle.start();
-        }
-        catch (Exception e) {
-          throw Throwables.propagate(e);
+          isLeaderRef.set(true);
+          serviceAnnouncer.announce(node);
         }
         finally {
           giant.unlock();
@@ -153,10 +128,8 @@ public class TaskMaster
       {
         giant.lock();
         try {
-          final Lifecycle leaderLifecycle = leaderLifecycleRef.getAndSet(null);
-          if (leaderLifecycle != null) {
-            leaderLifecycle.stop();
-          }
+          serviceAnnouncer.unannounce(node);
+          isLeaderRef.set(false);
         }
         finally {
           giant.unlock();
@@ -175,6 +148,26 @@ public class TaskMaster
 
     try {
       overlordLeaderSelector.registerListener(leadershipListener);
+      taskLockbox.syncFromStorage();
+      taskRunner = runnerFactory.build();
+      taskQueue = new TaskQueue(
+          taskQueueConfig,
+          taskStorage,
+          taskRunner,
+          taskActionClientFactory,
+          taskLockbox,
+          emitter,
+          isLeaderSupplier
+      );
+
+
+      taskRunner.start();
+      taskQueue.start();
+      supervisorManager.start();
+      overlordHelperManager.start();
+    }
+    catch (Exception e) {
+      throw Throwables.propagate(e);
     }
     finally {
       giant.unlock();
@@ -192,6 +185,10 @@ public class TaskMaster
 
     try {
       overlordLeaderSelector.unregisterListener();
+      taskRunner.stop();
+      taskQueue.stop();
+      supervisorManager.stop();
+      overlordHelperManager.stop();
     }
     finally {
       giant.unlock();

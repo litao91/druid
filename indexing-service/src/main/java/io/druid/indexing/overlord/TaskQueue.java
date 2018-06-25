@@ -22,6 +22,7 @@ package io.druid.indexing.overlord;
 import com.google.common.base.Function;
 import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Supplier;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
@@ -95,6 +96,8 @@ public class TaskQueue
 
   private static final EmittingLogger log = new EmittingLogger(TaskQueue.class);
 
+  private final Supplier<Boolean> isLeaderRef;
+
   @Inject
   public TaskQueue(
       TaskQueueConfig config,
@@ -102,7 +105,8 @@ public class TaskQueue
       TaskRunner taskRunner,
       TaskActionClientFactory taskActionClientFactory,
       TaskLockbox taskLockbox,
-      ServiceEmitter emitter
+      ServiceEmitter emitter,
+      Supplier<Boolean> isLeaderRef
   )
   {
     this.config = Preconditions.checkNotNull(config, "config");
@@ -111,6 +115,7 @@ public class TaskQueue
     this.taskActionClientFactory = Preconditions.checkNotNull(taskActionClientFactory, "taskActionClientFactory");
     this.taskLockbox = Preconditions.checkNotNull(taskLockbox, "taskLockbox");
     this.emitter = Preconditions.checkNotNull(emitter, "emitter");
+    this.isLeaderRef = isLeaderRef;
   }
 
   /**
@@ -126,30 +131,25 @@ public class TaskQueue
       active = true;
       syncFromStorage();
       managerExec.submit(
-          new Runnable()
-          {
-            @Override
-            public void run()
-            {
-              while (true) {
+          () -> {
+            while (true) {
+              try {
+                manage();
+                break;
+              }
+              catch (InterruptedException e) {
+                log.info("Interrupted, exiting!");
+                break;
+              }
+              catch (Exception e) {
+                final long restartDelay = config.getRestartDelay().getMillis();
+                log.makeAlert(e, "Failed to manage").addData("restartDelay", restartDelay).emit();
                 try {
-                  manage();
-                  break;
+                  Thread.sleep(restartDelay);
                 }
-                catch (InterruptedException e) {
+                catch (InterruptedException e2) {
                   log.info("Interrupted, exiting!");
                   break;
-                }
-                catch (Exception e) {
-                  final long restartDelay = config.getRestartDelay().getMillis();
-                  log.makeAlert(e, "Failed to manage").addData("restartDelay", restartDelay).emit();
-                  try {
-                    Thread.sleep(restartDelay);
-                  }
-                  catch (InterruptedException e2) {
-                    log.info("Interrupted, exiting!");
-                    break;
-                  }
                 }
               }
             }
