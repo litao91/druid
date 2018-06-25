@@ -98,6 +98,20 @@ public class TaskQueue
 
   private final Supplier<Boolean> isLeaderRef;
 
+  // For test only
+  public TaskQueue(
+      TaskQueueConfig config,
+      TaskStorage taskStorage,
+      TaskRunner taskRunner,
+      TaskActionClientFactory taskActionClientFactory,
+      TaskLockbox taskLockbox,
+      ServiceEmitter emitter
+  )
+  {
+    this(config, taskStorage, taskRunner, taskActionClientFactory, taskLockbox, emitter, () -> true);
+  }
+
+
   @Inject
   public TaskQueue(
       TaskQueueConfig config,
