@@ -111,8 +111,6 @@ public class TaskQueue
     this(config, taskStorage, taskRunner, taskActionClientFactory, taskLockbox, emitter, () -> true);
   }
 
-
-  @Inject
   public TaskQueue(
       TaskQueueConfig config,
       TaskStorage taskStorage,
