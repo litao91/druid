@@ -19,6 +19,7 @@
 
 package io.druid.indexing.overlord;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Function;
 import com.google.common.base.Optional;
@@ -49,12 +50,14 @@ import io.druid.java.util.common.logger.Logger;
 import io.druid.java.util.http.client.response.FullResponseHolder;
 import io.druid.metadata.EntryExistsException;
 import io.netty.channel.ChannelException;
+import org.antlr.v4.runtime.misc.Triple;
 import org.jboss.netty.handler.codec.http.HttpMethod;
 import org.joda.time.DateTime;
 import org.joda.time.Period;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
@@ -154,12 +157,50 @@ public class HeapMemoryTaskStorage implements TaskStorage
         FullResponseHolder activeTaskResponseHolder;
         activeTaskResponseHolder = overlordLeaderClient.go(
             overlordLeaderClient.makeRequest(HttpMethod.GET, "/druid/indexer/v1/runningTasks"));
+        List<Triple<Task, TaskStatus, TaskRunnerWorkItem>> activeTasks = getTasksFromResponse(activeTaskResponseHolder);
+        log.info("Get %d active tasks from leader", activeTasks.size());
         FullResponseHolder pendingTaskResponseHolder;
         pendingTaskResponseHolder = overlordLeaderClient.go(
             overlordLeaderClient.makeRequest(HttpMethod.GET, "/druid/indexer/v1/pendingTasks"));
+        List<Triple<Task, TaskStatus, TaskRunnerWorkItem>> pendingTasks = getTasksFromResponse(pendingTaskResponseHolder);
+        log.info("Get %d pending tasks from leader", pendingTasks.size());
         FullResponseHolder waitingTaskResponseHolder;
         waitingTaskResponseHolder = overlordLeaderClient.go(
             overlordLeaderClient.makeRequest(HttpMethod.GET, "/druid/indexer/v1/waitingTasks"));
+        List<Triple<Task, TaskStatus, TaskRunnerWorkItem>> waitingTasks = getTasksFromResponse(waitingTaskResponseHolder);
+        log.info(
+            "Get %d waitingTasks from leader",
+            waitingTasks.size()
+        );
+
+        // TODO: calculate lockbox
+
+        Iterable<Triple<Task, TaskStatus, TaskRunnerWorkItem>> tasks = Iterables.concat(
+            activeTasks,
+            pendingTasks,
+            waitingTasks
+        );
+        List<TaskStorageDataHolder.TaskInfoHolder> taskInfoHolderLst = ImmutableList.copyOf((Iterables.transform(
+            tasks,
+            new Function<Triple<Task, TaskStatus, TaskRunnerWorkItem>, TaskStorageDataHolder.TaskInfoHolder>()
+            {
+              @Nullable
+              @Override
+              public TaskStorageDataHolder.TaskInfoHolder apply(
+                  @Nullable
+                      Triple<Task, TaskStatus, TaskRunnerWorkItem> input
+              )
+              {
+                return new TaskStorageDataHolder.TaskInfoHolder(
+                    input.a,
+                    input.b,
+                    input.c.getCreatedTime(),
+                    input.a.getDataSource()
+                );
+              }
+            }
+        )));
+        taskStorageData = new TaskStorageDataHolder(taskInfoHolderLst, this.taskLocks.get());
       }
       catch (IOException | ChannelException e) {
         throw e;
@@ -169,7 +210,8 @@ public class HeapMemoryTaskStorage implements TaskStorage
 
     if (taskStorageData != null) {
       log.info("Synced %d tasks and %d taskLocks from leader", taskStorageData.getTasks().size(),
-               taskStorageData.getTaskLockboxes().size());
+               taskStorageData.getTaskLockboxes().size()
+      );
       Map<String, TaskStuff> newTasks = Maps.newHashMap();
 
       for (TaskStorageDataHolder.TaskInfoHolder holder : taskStorageData.getTasks()) {
@@ -185,7 +227,61 @@ public class HeapMemoryTaskStorage implements TaskStorage
     } else {
       throw new Exception("Can't sync with leader");
     }
+  }
 
+  private List<Triple<Task, TaskStatus, TaskRunnerWorkItem>> getTasksFromResponse(FullResponseHolder response)
+  {
+    if (response.getStatus().getCode() / 100 == 2) {
+      try {
+        List<TaskRunnerWorkItem> taskRunnerWorkItems = jsonMapper.readValue(
+            response.getContent(),
+            new TypeReference<TaskRunnerWorkItem>()
+            {
+            }
+        );
+        List<Triple<Task, TaskStatus, TaskRunnerWorkItem>> r = new ArrayList<>();
+        for (TaskRunnerWorkItem workItem : taskRunnerWorkItems) {
+          String taskId = workItem.getTaskId();
+          TaskStatus taskStatus = getTaskStatusFromLeader(taskId);
+          Task task = getTaskFromLeader(taskId);
+          if (taskStatus == null || task == null) {
+            return null;
+          } else {
+            r.add(new Triple<>(task, taskStatus, workItem));
+          }
+        }
+        return r;
+      }
+      catch (IOException e) {
+        log.error(e, "Error!");
+        return null;
+      }
+    } else {
+      return null;
+    }
+  }
+
+  private TaskStatus getTaskStatusFromLeader(String taskId)
+  {
+    try {
+      FullResponseHolder responseHolder;
+      String url = "/druid/indexer/v1/task/" + taskId + "/status";
+      log.info("Loading task status from : " + url);
+      responseHolder = overlordLeaderClient.go(
+          overlordLeaderClient.makeRequest(HttpMethod.GET, url));
+      if (responseHolder.getStatus().getCode() / 100 == 2) {
+        final TaskStatus status = jsonMapper.readValue(
+            responseHolder.getContent(),
+            TaskStatus.class
+        );
+        return status;
+      } else {
+        return null;
+      }
+    }
+    catch (Exception e) {
+      return null;
+    }
   }
 
   private Task getTaskFromLeader(String taskId)
@@ -193,12 +289,14 @@ public class HeapMemoryTaskStorage implements TaskStorage
     try {
       FullResponseHolder responseHolder;
       responseHolder = overlordLeaderClient.go(
-          overlordLeaderClient.makeRequest(HttpMethod.GET, "/druid/indexer/v1/task/" + taskId))
+          overlordLeaderClient.makeRequest(HttpMethod.GET, "/druid/indexer/v1/task/" + taskId));
       if (responseHolder.getStatus().getCode() / 100 == 2) {
+        return jsonMapper.readValue(
+            responseHolder.getContent(), Task.class);
+      } else {
         log.error("Invaild status code");
         return null;
       }
-
     }
     catch (Exception e) {
       log.error(e, "Can't get task id: %s", taskId);
