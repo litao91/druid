@@ -46,6 +46,7 @@ import io.druid.indexing.overlord.TaskMaster;
 import io.druid.indexing.overlord.TaskQueue;
 import io.druid.indexing.overlord.TaskRunner;
 import io.druid.indexing.overlord.TaskRunnerWorkItem;
+import io.druid.indexing.overlord.TaskStorageDataHolder;
 import io.druid.indexing.overlord.TaskStorageQueryAdapter;
 import io.druid.indexing.overlord.WorkerTaskRunner;
 import io.druid.indexing.overlord.autoscaling.ScalingStats;
@@ -169,7 +170,10 @@ public class OverlordResource
             }
             catch (EntryExistsException e) {
               return Response.status(Response.Status.BAD_REQUEST)
-                             .entity(ImmutableMap.of("error", StringUtils.format("Task[%s] already exists!", task.getId())))
+                             .entity(ImmutableMap.of(
+                                 "error",
+                                 StringUtils.format("Task[%s] already exists!", task.getId())
+                             ))
                              .build();
             }
           }
@@ -502,13 +506,14 @@ public class OverlordResource
     final List<TaskStatusPlus> completeTasks = recentlyFinishedTasks
         .stream()
         .map(status -> new TaskStatusPlus(
-            status.getId(),
-            taskStorageQueryAdapter.getCreatedTime(status.getId()),
-            // Would be nice to include the real queue insertion time, but the TaskStorage API doesn't yet allow it.
-            DateTimes.EPOCH,
-            status.getStatusCode(),
-            status.getDuration(),
-            TaskLocation.unknown())
+                 status.getId(),
+                 taskStorageQueryAdapter.getCreatedTime(status.getId()),
+                 // Would be nice to include the real queue insertion time, but the TaskStorage API doesn't yet allow it.
+                 DateTimes.EPOCH,
+                 status.getStatusCode(),
+                 status.getDuration(),
+                 TaskLocation.unknown()
+             )
         )
         .collect(Collectors.toList());
 
@@ -708,5 +713,15 @@ public class OverlordResource
             authorizerMapper
         )
     );
+  }
+
+  @GET
+  @Path("/internal/taskStorage")
+  @Produces(MediaType.APPLICATION_JSON)
+  @ResourceFilters(StateResourceFilter.class)
+  public Response getTaskStroage()
+  {
+    TaskStorageDataHolder data = this.taskMaster.getTaskStorage().getData();
+    return Response.ok(data).build();
   }
 }

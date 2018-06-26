@@ -305,6 +305,13 @@ public class MetadataTaskStorage implements TaskStorage
   }
 
   @Override
+  public TaskStorageDataHolder getData()
+  {
+    // Not implemented yet
+    return null;
+  }
+
+  @Override
   public <T> void addAuditLog(final Task task, final TaskAction<T> taskAction)
   {
     Preconditions.checkNotNull(taskAction, "taskAction");

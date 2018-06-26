@@ -113,6 +113,11 @@ public class TaskQueue
     this.emitter = Preconditions.checkNotNull(emitter, "emitter");
   }
 
+  public TaskStorage getTaskStorage()
+  {
+    return this.taskStorage;
+  }
+
   /**
    * Starts this task queue. Allows {@link #add(Task)} to accept new tasks.
    */

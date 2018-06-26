@@ -140,4 +140,11 @@ public interface TaskStorage
    * @return list of TaskLocks for the given task
    */
   List<TaskLock> getLocks(String taskid);
+
+  /**
+   * Returns a jackson friendly representation of TaskStorageData
+   *
+   * @return
+   */
+  TaskStorageDataHolder getData();
 }

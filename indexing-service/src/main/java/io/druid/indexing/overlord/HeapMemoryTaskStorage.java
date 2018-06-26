@@ -19,11 +19,13 @@
 
 package io.druid.indexing.overlord;
 
+import com.google.common.base.Function;
 import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Ordering;
@@ -153,8 +155,15 @@ public class HeapMemoryTaskStorage implements TaskStorage
   {
     long now = System.currentTimeMillis();
     long twoDaysInMillis = 1000 * 60 * 60 * 12;
-    List<TaskStuff> oldTasks = tasks.values().stream().filter(taskStuff -> taskStuff.getStatus().isComplete()
-        && now - taskStuff.getCreatedDate().getMillis() - taskStuff.getStatus().getDuration() > twoDaysInMillis).collect(Collectors.toList());
+    List<TaskStuff> oldTasks = tasks.values()
+                                    .stream()
+                                    .filter(taskStuff -> taskStuff.getStatus().isComplete()
+                                                         && now
+                                                            - taskStuff.getCreatedDate()
+                                                                       .getMillis()
+                                                            - taskStuff.getStatus().getDuration()
+                                                            > twoDaysInMillis)
+                                    .collect(Collectors.toList());
     int count = 0;
     for (TaskStuff t : oldTasks) {
       count++;
@@ -319,6 +328,31 @@ public class HeapMemoryTaskStorage implements TaskStorage
     finally {
       giant.unlock();
     }
+  }
+
+  @Override
+  public TaskStorageDataHolder getData()
+  {
+    List<TaskStorageDataHolder.TaskInfoHolder> taskInfoLst = ImmutableList.copyOf(Iterables.transform(
+        tasks.values(),
+        new Function<TaskStuff, TaskStorageDataHolder.TaskInfoHolder>()
+        {
+
+          @Nullable
+          @Override
+          public TaskStorageDataHolder.TaskInfoHolder apply(@Nullable TaskStuff input)
+          {
+            return new TaskStorageDataHolder.TaskInfoHolder(
+                input.getTask(),
+                input.getStatus(),
+                input.getCreatedDate(),
+                input.getDataSource()
+            );
+          }
+        }
+    ));
+    List<TaskLock> taskLockLst = ImmutableList.copyOf(taskLocks.values());
+    return new TaskStorageDataHolder(taskInfoLst, taskLockLst);
   }
 
   @Override
