@@ -22,6 +22,7 @@ package io.druid.indexing.overlord;
 import com.google.common.base.Function;
 import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Supplier;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
@@ -32,10 +33,6 @@ import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
-import com.google.inject.Inject;
-import io.druid.java.util.emitter.EmittingLogger;
-import io.druid.java.util.emitter.service.ServiceEmitter;
-import io.druid.java.util.emitter.service.ServiceMetricEvent;
 import io.druid.indexing.common.TaskStatus;
 import io.druid.indexing.common.actions.TaskActionClientFactory;
 import io.druid.indexing.common.task.Task;
@@ -43,6 +40,9 @@ import io.druid.indexing.overlord.config.TaskQueueConfig;
 import io.druid.java.util.common.concurrent.ScheduledExecutors;
 import io.druid.java.util.common.lifecycle.LifecycleStart;
 import io.druid.java.util.common.lifecycle.LifecycleStop;
+import io.druid.java.util.emitter.EmittingLogger;
+import io.druid.java.util.emitter.service.ServiceEmitter;
+import io.druid.java.util.emitter.service.ServiceMetricEvent;
 import io.druid.metadata.EntryExistsException;
 import io.druid.query.DruidMetrics;
 
@@ -50,7 +50,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -91,18 +90,20 @@ public class TaskQueue
           .setNameFormat("TaskQueue-StorageSync").build()
   );
 
+  private final Supplier<Boolean> isLeaderSupplier;
+
   private volatile boolean active = false;
 
   private static final EmittingLogger log = new EmittingLogger(TaskQueue.class);
 
-  @Inject
   public TaskQueue(
       TaskQueueConfig config,
       TaskStorage taskStorage,
       TaskRunner taskRunner,
       TaskActionClientFactory taskActionClientFactory,
       TaskLockbox taskLockbox,
-      ServiceEmitter emitter
+      ServiceEmitter emitter,
+      Supplier<Boolean> isLeaderSupplier
   )
   {
     this.config = Preconditions.checkNotNull(config, "config");
@@ -111,6 +112,7 @@ public class TaskQueue
     this.taskActionClientFactory = Preconditions.checkNotNull(taskActionClientFactory, "taskActionClientFactory");
     this.taskLockbox = Preconditions.checkNotNull(taskLockbox, "taskLockbox");
     this.emitter = Preconditions.checkNotNull(emitter, "emitter");
+    this.isLeaderSupplier = isLeaderSupplier;
   }
 
   /**
@@ -126,30 +128,25 @@ public class TaskQueue
       active = true;
       syncFromStorage();
       managerExec.submit(
-          new Runnable()
-          {
-            @Override
-            public void run()
-            {
-              while (true) {
+          () -> {
+            while (true) {
+              try {
+                manage();
+                break;
+              }
+              catch (InterruptedException e) {
+                log.info("Interrupted, exiting!");
+                break;
+              }
+              catch (Exception e) {
+                final long restartDelay = config.getRestartDelay().getMillis();
+                log.makeAlert(e, "Failed to manage").addData("restartDelay", restartDelay).emit();
                 try {
-                  manage();
-                  break;
+                  Thread.sleep(restartDelay);
                 }
-                catch (InterruptedException e) {
+                catch (InterruptedException e2) {
                   log.info("Interrupted, exiting!");
                   break;
-                }
-                catch (Exception e) {
-                  final long restartDelay = config.getRestartDelay().getMillis();
-                  log.makeAlert(e, "Failed to manage").addData("restartDelay", restartDelay).emit();
-                  try {
-                    Thread.sleep(restartDelay);
-                  }
-                  catch (InterruptedException e2) {
-                    log.info("Interrupted, exiting!");
-                    break;
-                  }
                 }
               }
             }
@@ -158,24 +155,19 @@ public class TaskQueue
       ScheduledExecutors.scheduleAtFixedRate(
           storageSyncExec,
           config.getStorageSyncRate(),
-          new Callable<ScheduledExecutors.Signal>()
-          {
-            @Override
-            public ScheduledExecutors.Signal call()
-            {
-              try {
-                syncFromStorage();
-              }
-              catch (Exception e) {
-                if (active) {
-                  log.makeAlert(e, "Failed to sync with storage").emit();
-                }
-              }
+          () -> {
+            try {
+              syncFromStorage();
+            }
+            catch (Exception e) {
               if (active) {
-                return ScheduledExecutors.Signal.REPEAT;
-              } else {
-                return ScheduledExecutors.Signal.STOP;
+                log.makeAlert(e, "Failed to sync with storage").emit();
               }
+            }
+            if (active) {
+              return ScheduledExecutors.Signal.REPEAT;
+            } else {
+              return ScheduledExecutors.Signal.STOP;
             }
           }
       );

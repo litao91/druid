@@ -22,6 +22,8 @@ package io.druid.indexing.overlord;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Supplier;
 import com.google.inject.Inject;
+import io.druid.client.indexing.IndexingService;
+import io.druid.discovery.DruidLeaderSelector;
 import io.druid.java.util.http.client.HttpClient;
 import io.druid.curator.cache.PathChildrenCacheFactory;
 import io.druid.guice.annotations.EscalatedGlobal;
@@ -46,6 +48,7 @@ public class RemoteTaskRunnerFactory implements TaskRunnerFactory<RemoteTaskRunn
   private final Supplier<WorkerBehaviorConfig> workerConfigRef;
   private final ProvisioningSchedulerConfig provisioningSchedulerConfig;
   private final ProvisioningStrategy provisioningStrategy;
+  private final Supplier<Boolean> isLeaderSupplier;
 
   @Inject
   public RemoteTaskRunnerFactory(
@@ -56,8 +59,9 @@ public class RemoteTaskRunnerFactory implements TaskRunnerFactory<RemoteTaskRunn
       @EscalatedGlobal final HttpClient httpClient,
       final Supplier<WorkerBehaviorConfig> workerConfigRef,
       final ProvisioningSchedulerConfig provisioningSchedulerConfig,
-      final ProvisioningStrategy provisioningStrategy
-  )
+      final ProvisioningStrategy provisioningStrategy,
+      @IndexingService final DruidLeaderSelector leaderSelector
+      )
   {
     this.curator = curator;
     this.remoteTaskRunnerConfig = remoteTaskRunnerConfig;
@@ -67,6 +71,7 @@ public class RemoteTaskRunnerFactory implements TaskRunnerFactory<RemoteTaskRunn
     this.workerConfigRef = workerConfigRef;
     this.provisioningSchedulerConfig = provisioningSchedulerConfig;
     this.provisioningStrategy = provisioningStrategy;
+    this.isLeaderSupplier = () -> leaderSelector.isLeader();
   }
 
   @Override
@@ -80,7 +85,9 @@ public class RemoteTaskRunnerFactory implements TaskRunnerFactory<RemoteTaskRunn
         new PathChildrenCacheFactory.Builder().withCompressed(true),
         httpClient,
         workerConfigRef,
-        provisioningSchedulerConfig.isDoAutoscale() ? provisioningStrategy : new NoopProvisioningStrategy<>()
+        provisioningSchedulerConfig.isDoAutoscale() ? provisioningStrategy : new NoopProvisioningStrategy<>(),
+        isLeaderSupplier
     );
   }
+
 }

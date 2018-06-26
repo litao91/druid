@@ -20,6 +20,7 @@
 package io.druid.indexing.overlord.config;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.google.common.base.Supplier;
 import io.druid.curator.CuratorUtils;
 import org.joda.time.Period;
 
@@ -66,6 +67,8 @@ public class RemoteTaskRunnerConfig extends WorkerTaskRunnerConfig
   @Max(100)
   @Min(0)
   private int maxPercentageBlacklistWorkers = 20;
+
+  private Supplier<Boolean> isLeader = () -> true;
 
   public Period getTaskAssignmentTimeout()
   {

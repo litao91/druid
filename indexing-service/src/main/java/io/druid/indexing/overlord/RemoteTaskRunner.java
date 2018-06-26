@@ -178,6 +178,7 @@ public class RemoteTaskRunner implements WorkerTaskRunner, TaskLogStreamer
 
   private final ConcurrentMap<String, ScheduledFuture> removedWorkerCleanups = new ConcurrentHashMap<>();
   private final ProvisioningStrategy<WorkerTaskRunner> provisioningStrategy;
+  private final Supplier<Boolean> isLeaderSupplier;
   private ProvisioningService provisioningService;
 
   public RemoteTaskRunner(
@@ -188,7 +189,8 @@ public class RemoteTaskRunner implements WorkerTaskRunner, TaskLogStreamer
       PathChildrenCacheFactory.Builder pathChildrenCacheFactory,
       HttpClient httpClient,
       Supplier<WorkerBehaviorConfig> workerConfigRef,
-      ProvisioningStrategy<WorkerTaskRunner> provisioningStrategy
+      ProvisioningStrategy<WorkerTaskRunner> provisioningStrategy,
+      Supplier<Boolean> isLeaderSupplier
   )
   {
     this.jsonMapper = jsonMapper;
@@ -212,6 +214,11 @@ public class RemoteTaskRunner implements WorkerTaskRunner, TaskLogStreamer
         config.getPendingTasksRunnerNumThreads(),
         "rtr-pending-tasks-runner-%d"
     );
+    if (isLeaderSupplier == null) {
+      this.isLeaderSupplier = () -> true;
+    } else {
+      this.isLeaderSupplier = isLeaderSupplier;
+    }
   }
 
   @Override

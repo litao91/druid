@@ -20,6 +20,7 @@
 package io.druid.indexing.overlord;
 
 import com.google.common.base.Optional;
+import com.google.common.base.Supplier;
 import com.google.common.base.Throwables;
 import com.google.inject.Inject;
 import io.druid.java.util.emitter.EmittingLogger;
@@ -57,9 +58,11 @@ public class TaskMaster
   private final SupervisorManager supervisorManager;
 
   private final AtomicReference<Lifecycle> leaderLifecycleRef = new AtomicReference<>(null);
+  private final TaskLockbox taskLockbox;
+  private final TaskRunner taskRunner;
+  private final TaskQueue taskQueue;
 
-  private volatile TaskRunner taskRunner;
-  private volatile TaskQueue taskQueue;
+  private final Supplier<Boolean> overlordLeaderSupplier;
 
   private static final EmittingLogger log = new EmittingLogger(TaskMaster.class);
 
@@ -87,6 +90,20 @@ public class TaskMaster
     final DruidNode node = coordinatorOverlordServiceConfig.getOverlordService() == null ? selfNode :
                            selfNode.withService(coordinatorOverlordServiceConfig.getOverlordService());
 
+    this.overlordLeaderSupplier = () -> overlordLeaderSelector.isLeader();
+
+    this.taskLockbox = taskLockbox;
+    this.taskRunner = runnerFactory.build();
+    this.taskQueue = new TaskQueue(
+        taskQueueConfig,
+        taskStorage,
+        taskRunner,
+        taskActionClientFactory,
+        taskLockbox,
+        emitter,
+        overlordLeaderSupplier
+    );
+
     this.leadershipListener = new DruidLeaderSelector.Listener()
     {
       @Override
@@ -98,16 +115,6 @@ public class TaskMaster
         log.info("By the power of Grayskull, I have the power!");
 
         try {
-          taskLockbox.syncFromStorage();
-          taskRunner = runnerFactory.build();
-          taskQueue = new TaskQueue(
-              taskQueueConfig,
-              taskStorage,
-              taskRunner,
-              taskActionClientFactory,
-              taskLockbox,
-              emitter
-          );
 
           // Sensible order to start stuff:
           final Lifecycle leaderLifecycle = new Lifecycle();
@@ -116,8 +123,6 @@ public class TaskMaster
                .emit();
           }
 
-          leaderLifecycle.addManagedInstance(taskRunner);
-          leaderLifecycle.addManagedInstance(taskQueue);
           leaderLifecycle.addManagedInstance(supervisorManager);
           leaderLifecycle.addManagedInstance(overlordHelperManager);
 
@@ -174,6 +179,9 @@ public class TaskMaster
     giant.lock();
 
     try {
+      taskLockbox.syncFromStorage();
+      taskRunner.start();
+      taskQueue.start();
       overlordLeaderSelector.registerListener(leadershipListener);
     }
     finally {
@@ -191,6 +199,8 @@ public class TaskMaster
     giant.lock();
 
     try {
+      taskRunner.stop();
+      taskQueue.stop();
       overlordLeaderSelector.unregisterListener();
     }
     finally {

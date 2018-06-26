@@ -640,7 +640,7 @@ public class TaskLifecycleTest
         TaskQueueConfig.class
     );
 
-    return new TaskQueue(tqc, ts, tr, tac, taskLockbox, emitter);
+    return new TaskQueue(tqc, ts, tr, tac, taskLockbox, emitter, () -> true);
   }
 
   @After
