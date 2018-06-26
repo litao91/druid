@@ -362,68 +362,56 @@ public class OverlordResource
   public Response getWaitingTasks(@Context final HttpServletRequest req)
   {
     return workItemsResponse(
-        new Function<TaskRunner, Collection<? extends TaskRunnerWorkItem>>()
-        {
-          @Override
-          public Collection<? extends TaskRunnerWorkItem> apply(TaskRunner taskRunner)
-          {
-            // A bit roundabout, but works as a way of figuring out what tasks haven't been handed
-            // off to the runner yet:
-            final List<Task> allActiveTasks = taskStorageQueryAdapter.getActiveTasks();
-            Function<Task, Iterable<ResourceAction>> raGenerator = task -> {
-              return Lists.newArrayList(
-                  new ResourceAction(
-                      new Resource(task.getDataSource(), ResourceType.DATASOURCE),
-                      Action.READ
+        taskRunner -> {
+          // A bit roundabout, but works as a way of figuring out what tasks haven't been handed
+          // off to the runner yet:
+          final List<Task> allActiveTasks = taskStorageQueryAdapter.getActiveTasks();
+          Function<Task, Iterable<ResourceAction>> raGenerator = task -> {
+            return Lists.newArrayList(
+                new ResourceAction(
+                    new Resource(task.getDataSource(), ResourceType.DATASOURCE),
+                    Action.READ
+                )
+            );
+          };
+
+          final List<Task> activeTasks = Lists.newArrayList(
+              AuthorizationUtils.filterAuthorizedResources(
+                  req,
+                  allActiveTasks,
+                  raGenerator,
+                  authorizerMapper
+              )
+          );
+
+          final Set<String> runnersKnownTasks = Sets.newHashSet(
+              Iterables.transform(
+                  taskRunner.getKnownTasks(),
+                  (Function<TaskRunnerWorkItem, String>) workItem -> workItem.getTaskId()
+              )
+          );
+          final List<TaskRunnerWorkItem> waitingTasks = Lists.newArrayList();
+          for (final Task task : activeTasks) {
+            if (!runnersKnownTasks.contains(task.getId())) {
+              waitingTasks.add(
+                  // Would be nice to include the real created date, but the TaskStorage API doesn't yet allow it.
+                  new TaskRunnerWorkItem(
+                      task.getId(),
+                      SettableFuture.create(),
+                      DateTimes.EPOCH,
+                      DateTimes.EPOCH
                   )
+                  {
+                    @Override
+                    public TaskLocation getLocation()
+                    {
+                      return TaskLocation.unknown();
+                    }
+                  }
               );
-            };
-
-            final List<Task> activeTasks = Lists.newArrayList(
-                AuthorizationUtils.filterAuthorizedResources(
-                    req,
-                    allActiveTasks,
-                    raGenerator,
-                    authorizerMapper
-                )
-            );
-
-            final Set<String> runnersKnownTasks = Sets.newHashSet(
-                Iterables.transform(
-                    taskRunner.getKnownTasks(),
-                    new Function<TaskRunnerWorkItem, String>()
-                    {
-                      @Override
-                      public String apply(final TaskRunnerWorkItem workItem)
-                      {
-                        return workItem.getTaskId();
-                      }
-                    }
-                )
-            );
-            final List<TaskRunnerWorkItem> waitingTasks = Lists.newArrayList();
-            for (final Task task : activeTasks) {
-              if (!runnersKnownTasks.contains(task.getId())) {
-                waitingTasks.add(
-                    // Would be nice to include the real created date, but the TaskStorage API doesn't yet allow it.
-                    new TaskRunnerWorkItem(
-                        task.getId(),
-                        SettableFuture.create(),
-                        DateTimes.EPOCH,
-                        DateTimes.EPOCH
-                    )
-                    {
-                      @Override
-                      public TaskLocation getLocation()
-                      {
-                        return TaskLocation.unknown();
-                      }
-                    }
-                );
-              }
             }
-            return waitingTasks;
           }
+          return waitingTasks;
         }
     );
   }

@@ -149,9 +149,27 @@ public class HeapMemoryTaskStorage implements TaskStorage
     }
 
     if (fallback) {
+      log.debug("Sync with internal API failed, sync with public API");
+      try {
+        FullResponseHolder activeTaskResponseHolder;
+        activeTaskResponseHolder = overlordLeaderClient.go(
+            overlordLeaderClient.makeRequest(HttpMethod.GET, "/druid/indexer/v1/runningTasks"));
+        FullResponseHolder pendingTaskResponseHolder;
+        pendingTaskResponseHolder = overlordLeaderClient.go(
+            overlordLeaderClient.makeRequest(HttpMethod.GET, "/druid/indexer/v1/pendingTasks"));
+        FullResponseHolder waitingTaskResponseHolder;
+        waitingTaskResponseHolder = overlordLeaderClient.go(
+            overlordLeaderClient.makeRequest(HttpMethod.GET, "/druid/indexer/v1/waitingTasks"));
+      }
+      catch (IOException | ChannelException e) {
+        throw e;
+      }
     }
 
+
     if (taskStorageData != null) {
+      log.info("Synced %d tasks and %d taskLocks from leader", taskStorageData.getTasks().size(),
+               taskStorageData.getTaskLockboxes().size());
       Map<String, TaskStuff> newTasks = Maps.newHashMap();
 
       for (TaskStorageDataHolder.TaskInfoHolder holder : taskStorageData.getTasks()) {
@@ -168,6 +186,24 @@ public class HeapMemoryTaskStorage implements TaskStorage
       throw new Exception("Can't sync with leader");
     }
 
+  }
+
+  private Task getTaskFromLeader(String taskId)
+  {
+    try {
+      FullResponseHolder responseHolder;
+      responseHolder = overlordLeaderClient.go(
+          overlordLeaderClient.makeRequest(HttpMethod.GET, "/druid/indexer/v1/task/" + taskId))
+      if (responseHolder.getStatus().getCode() / 100 == 2) {
+        log.error("Invaild status code");
+        return null;
+      }
+
+    }
+    catch (Exception e) {
+      log.error(e, "Can't get task id: %s", taskId);
+      return null;
+    }
   }
 
   @LifecycleStop
