@@ -21,6 +21,7 @@ package io.druid.indexing.overlord;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Multimap;
 import io.druid.indexing.common.TaskLock;
 import io.druid.indexing.common.TaskStatus;
 import io.druid.indexing.common.task.Task;
@@ -34,12 +35,12 @@ import java.util.List;
 public final class TaskStorageDataHolder
 {
   private final List<TaskInfoHolder> tasks;
-  private final List<TaskLock> taskLocks;
+  private final Multimap<String, TaskLock> taskLocks;
 
   @JsonCreator
   public TaskStorageDataHolder(
       @JsonProperty("tasks") List<TaskInfoHolder> tasks,
-      @JsonProperty("taskLockboxes") List<TaskLock> taskLocks
+      @JsonProperty("taskLockboxes") Multimap<String, TaskLock> taskLocks
   )
   {
     this.taskLocks = taskLocks;
@@ -53,7 +54,7 @@ public final class TaskStorageDataHolder
   }
 
   @JsonProperty("taskLocks")
-  public List<TaskLock> getTaskLockboxes()
+  public Multimap<String, TaskLock> getTaskLockboxes()
   {
     return this.taskLocks;
   }

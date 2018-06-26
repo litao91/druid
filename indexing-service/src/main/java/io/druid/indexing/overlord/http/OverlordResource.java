@@ -159,23 +159,18 @@ public class OverlordResource
 
     return asLeaderWith(
         taskMaster.getTaskQueue(),
-        new Function<TaskQueue, Response>()
-        {
-          @Override
-          public Response apply(TaskQueue taskQueue)
-          {
-            try {
-              taskQueue.add(task);
-              return Response.ok(ImmutableMap.of("task", task.getId())).build();
-            }
-            catch (EntryExistsException e) {
-              return Response.status(Response.Status.BAD_REQUEST)
-                             .entity(ImmutableMap.of(
-                                 "error",
-                                 StringUtils.format("Task[%s] already exists!", task.getId())
-                             ))
-                             .build();
-            }
+        taskQueue -> {
+          try {
+            taskQueue.add(task);
+            return Response.ok(ImmutableMap.of("task", task.getId())).build();
+          }
+          catch (EntryExistsException e) {
+            return Response.status(Status.BAD_REQUEST)
+                           .entity(ImmutableMap.of(
+                               "error",
+                               StringUtils.format("Task[%s] already exists!", task.getId())
+                           ))
+                           .build();
           }
         }
     );
@@ -439,14 +434,7 @@ public class OverlordResource
   public Response getPendingTasks(@Context final HttpServletRequest req)
   {
     return workItemsResponse(
-        new Function<TaskRunner, Collection<? extends TaskRunnerWorkItem>>()
-        {
-          @Override
-          public Collection<? extends TaskRunnerWorkItem> apply(TaskRunner taskRunner)
-          {
-            return securedTaskRunnerWorkItem(taskRunner.getPendingTasks(), req);
-          }
-        }
+        taskRunner -> securedTaskRunnerWorkItem(taskRunner.getPendingTasks(), req)
     );
   }
 
@@ -456,14 +444,7 @@ public class OverlordResource
   public Response getRunningTasks(@Context final HttpServletRequest req)
   {
     return workItemsResponse(
-        new Function<TaskRunner, Collection<? extends TaskRunnerWorkItem>>()
-        {
-          @Override
-          public Collection<? extends TaskRunnerWorkItem> apply(TaskRunner taskRunner)
-          {
-            return securedTaskRunnerWorkItem(taskRunner.getRunningTasks(), req);
-          }
-        }
+        taskRunner -> securedTaskRunnerWorkItem(taskRunner.getRunningTasks(), req)
     );
   }
 

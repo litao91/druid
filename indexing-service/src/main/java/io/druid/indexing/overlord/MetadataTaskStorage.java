@@ -23,12 +23,10 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.google.common.base.Function;
 import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
-import com.google.common.base.Predicate;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.inject.Inject;
-import io.druid.java.util.emitter.EmittingLogger;
 import io.druid.indexing.common.TaskLock;
 import io.druid.indexing.common.TaskStatus;
 import io.druid.indexing.common.actions.TaskAction;
@@ -39,6 +37,7 @@ import io.druid.java.util.common.ISE;
 import io.druid.java.util.common.Pair;
 import io.druid.java.util.common.lifecycle.LifecycleStart;
 import io.druid.java.util.common.lifecycle.LifecycleStop;
+import io.druid.java.util.emitter.EmittingLogger;
 import io.druid.metadata.EntryExistsException;
 import io.druid.metadata.MetadataStorageActionHandler;
 import io.druid.metadata.MetadataStorageActionHandlerFactory;
@@ -188,16 +187,7 @@ public class MetadataTaskStorage implements TaskStorage
         Iterables.transform(
             Iterables.filter(
                 handler.getActiveEntriesWithStatus(),
-                new Predicate<Pair<Task, TaskStatus>>()
-                {
-                  @Override
-                  public boolean apply(
-                      @Nullable Pair<Task, TaskStatus> input
-                  )
-                  {
-                    return input.rhs.isRunnable();
-                  }
-                }
+                input -> input.rhs.isRunnable()
             ),
             new Function<Pair<Task, TaskStatus>, Task>()
             {
@@ -292,14 +282,7 @@ public class MetadataTaskStorage implements TaskStorage
   {
     return ImmutableList.copyOf(
         Iterables.transform(
-            getLocksWithIds(taskid).entrySet(), new Function<Map.Entry<Long, TaskLock>, TaskLock>()
-            {
-              @Override
-              public TaskLock apply(Map.Entry<Long, TaskLock> e)
-              {
-                return e.getValue();
-              }
-            }
+            getLocksWithIds(taskid).entrySet(), e -> e.getValue()
         )
     );
   }

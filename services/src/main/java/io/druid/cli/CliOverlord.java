@@ -225,7 +225,7 @@ public class CliOverlord extends ServerRunnable
                 Key.get(TaskStorage.class)
             );
 
-            storageBinder.addBinding("local").to(HeapMemoryTaskStorage.class);
+            storageBinder.addBinding("local").to(HeapMemoryTaskStorage.class).in(ManageLifecycle.class);
             binder.bind(HeapMemoryTaskStorage.class).in(LazySingleton.class);
 
             storageBinder.addBinding("metadata").to(MetadataTaskStorage.class).in(ManageLifecycle.class);
