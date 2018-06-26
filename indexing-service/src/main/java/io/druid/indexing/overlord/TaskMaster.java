@@ -23,10 +23,8 @@ import com.google.common.base.Optional;
 import com.google.common.base.Supplier;
 import com.google.common.base.Throwables;
 import com.google.inject.Inject;
-import io.druid.common.guava.DSuppliers;
-import io.druid.java.util.emitter.EmittingLogger;
-import io.druid.java.util.emitter.service.ServiceEmitter;
 import io.druid.client.indexing.IndexingService;
+import io.druid.common.guava.DSuppliers;
 import io.druid.curator.discovery.ServiceAnnouncer;
 import io.druid.discovery.DruidLeaderSelector;
 import io.druid.guice.annotations.Self;
@@ -37,9 +35,10 @@ import io.druid.indexing.overlord.autoscaling.ScalingStats;
 import io.druid.indexing.overlord.config.TaskQueueConfig;
 import io.druid.indexing.overlord.helpers.OverlordHelperManager;
 import io.druid.indexing.overlord.supervisor.SupervisorManager;
-import io.druid.java.util.common.lifecycle.Lifecycle;
 import io.druid.java.util.common.lifecycle.LifecycleStart;
 import io.druid.java.util.common.lifecycle.LifecycleStop;
+import io.druid.java.util.emitter.EmittingLogger;
+import io.druid.java.util.emitter.service.ServiceEmitter;
 import io.druid.server.DruidNode;
 import io.druid.server.coordinator.CoordinatorOverlordServiceConfig;
 
@@ -64,8 +63,7 @@ public class TaskMaster
   private static final EmittingLogger log = new EmittingLogger(TaskMaster.class);
 
 
-  private final AtomicReference<Boolean> isLeaderRef = new AtomicReference<>(false);
-  private final Supplier<Boolean> isLeaderSupplier = DSuppliers.of(isLeaderRef);
+  private final Supplier<Boolean> isLeaderSupplier;
 
   private final TaskLockbox taskLockbox;
   private final TaskQueueConfig taskQueueConfig;
@@ -105,6 +103,9 @@ public class TaskMaster
     this.emitter = emitter;
     this.overlordHelperManager = overlordHelperManager;
 
+    this.isLeaderSupplier = () -> overlordLeaderSelector.isLeader();
+
+
     this.leadershipListener = new DruidLeaderSelector.Listener()
     {
       @Override
@@ -115,7 +116,6 @@ public class TaskMaster
 
         giant.lock();
         try {
-          isLeaderRef.set(true);
           serviceAnnouncer.announce(node);
         }
         finally {
@@ -129,7 +129,6 @@ public class TaskMaster
         giant.lock();
         try {
           serviceAnnouncer.unannounce(node);
-          isLeaderRef.set(false);
         }
         finally {
           giant.unlock();
