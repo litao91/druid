@@ -28,6 +28,9 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Ordering;
 import com.google.inject.Inject;
+import io.druid.client.indexing.IndexingService;
+import io.druid.discovery.DruidLeaderClient;
+import io.druid.discovery.DruidLeaderSelector;
 import io.druid.indexing.common.TaskLock;
 import io.druid.indexing.common.TaskStatus;
 import io.druid.indexing.common.actions.TaskAction;
@@ -60,10 +63,18 @@ public class HeapMemoryTaskStorage implements TaskStorage
 
   private static final Logger log = new Logger(HeapMemoryTaskStorage.class);
 
+  private final DruidLeaderClient client;
+  private final DruidLeaderSelector leaderSelector;
+
   @Inject
-  public HeapMemoryTaskStorage(TaskStorageConfig config)
+  public HeapMemoryTaskStorage(
+      TaskStorageConfig config,
+      @IndexingService DruidLeaderClient leaderHttpClient,
+      @IndexingService DruidLeaderSelector leaderSelector)
   {
     this.config = config;
+    this.client = leaderHttpClient;
+    this.leaderSelector = leaderSelector;
   }
 
   @Override

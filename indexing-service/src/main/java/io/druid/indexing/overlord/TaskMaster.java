@@ -115,7 +115,6 @@ public class TaskMaster
         log.info("By the power of Grayskull, I have the power!");
 
         try {
-
           // Sensible order to start stuff:
           final Lifecycle leaderLifecycle = new Lifecycle();
           if (leaderLifecycleRef.getAndSet(leaderLifecycle) != null) {
