@@ -138,7 +138,7 @@ public class IngestSegmentFirehoseFactoryTest
     TASK_STORAGE = new HeapMemoryTaskStorage(
         new TaskStorageConfig(null)
         {
-        }
+        }, null, null, null
     );
     TASK_LOCKBOX = new TaskLockbox(TASK_STORAGE);
     TASK = NoopTask.create();

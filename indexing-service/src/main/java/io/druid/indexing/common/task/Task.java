@@ -63,6 +63,7 @@ import java.util.Map;
     @JsonSubTypes.Type(name = "same_interval_merge", value = SameIntervalMergeTask.class),
     @JsonSubTypes.Type(name = "compact", value = CompactionTask.class)
 })
+
 public interface Task
 {
   /**

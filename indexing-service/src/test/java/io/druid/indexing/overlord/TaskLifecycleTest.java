@@ -391,7 +391,7 @@ public class TaskLifecycleTest
         taskStorage = new HeapMemoryTaskStorage(
             new TaskStorageConfig(null)
             {
-            }
+            }, null, null, null
         );
         break;
       }
