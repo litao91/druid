@@ -46,6 +46,7 @@ import io.druid.indexing.overlord.TaskMaster;
 import io.druid.indexing.overlord.TaskQueue;
 import io.druid.indexing.overlord.TaskRunner;
 import io.druid.indexing.overlord.TaskRunnerWorkItem;
+import io.druid.indexing.overlord.TaskStorageDataHolder;
 import io.druid.indexing.overlord.TaskStorageQueryAdapter;
 import io.druid.indexing.overlord.WorkerTaskRunner;
 import io.druid.indexing.overlord.autoscaling.ScalingStats;
@@ -158,20 +159,18 @@ public class OverlordResource
 
     return asLeaderWith(
         taskMaster.getTaskQueue(),
-        new Function<TaskQueue, Response>()
-        {
-          @Override
-          public Response apply(TaskQueue taskQueue)
-          {
-            try {
-              taskQueue.add(task);
-              return Response.ok(ImmutableMap.of("task", task.getId())).build();
-            }
-            catch (EntryExistsException e) {
-              return Response.status(Response.Status.BAD_REQUEST)
-                             .entity(ImmutableMap.of("error", StringUtils.format("Task[%s] already exists!", task.getId())))
-                             .build();
-            }
+        taskQueue -> {
+          try {
+            taskQueue.add(task);
+            return Response.ok(ImmutableMap.of("task", task.getId())).build();
+          }
+          catch (EntryExistsException e) {
+            return Response.status(Status.BAD_REQUEST)
+                           .entity(ImmutableMap.of(
+                               "error",
+                               StringUtils.format("Task[%s] already exists!", task.getId())
+                           ))
+                           .build();
           }
         }
     );
@@ -363,68 +362,56 @@ public class OverlordResource
   public Response getWaitingTasks(@Context final HttpServletRequest req)
   {
     return workItemsResponse(
-        new Function<TaskRunner, Collection<? extends TaskRunnerWorkItem>>()
-        {
-          @Override
-          public Collection<? extends TaskRunnerWorkItem> apply(TaskRunner taskRunner)
-          {
-            // A bit roundabout, but works as a way of figuring out what tasks haven't been handed
-            // off to the runner yet:
-            final List<Task> allActiveTasks = taskStorageQueryAdapter.getActiveTasks();
-            Function<Task, Iterable<ResourceAction>> raGenerator = task -> {
-              return Lists.newArrayList(
-                  new ResourceAction(
-                      new Resource(task.getDataSource(), ResourceType.DATASOURCE),
-                      Action.READ
+        taskRunner -> {
+          // A bit roundabout, but works as a way of figuring out what tasks haven't been handed
+          // off to the runner yet:
+          final List<Task> allActiveTasks = taskStorageQueryAdapter.getActiveTasks();
+          Function<Task, Iterable<ResourceAction>> raGenerator = task -> {
+            return Lists.newArrayList(
+                new ResourceAction(
+                    new Resource(task.getDataSource(), ResourceType.DATASOURCE),
+                    Action.READ
+                )
+            );
+          };
+
+          final List<Task> activeTasks = Lists.newArrayList(
+              AuthorizationUtils.filterAuthorizedResources(
+                  req,
+                  allActiveTasks,
+                  raGenerator,
+                  authorizerMapper
+              )
+          );
+
+          final Set<String> runnersKnownTasks = Sets.newHashSet(
+              Iterables.transform(
+                  taskRunner.getKnownTasks(),
+                  (Function<TaskRunnerWorkItem, String>) workItem -> workItem.getTaskId()
+              )
+          );
+          final List<TaskRunnerWorkItem> waitingTasks = Lists.newArrayList();
+          for (final Task task : activeTasks) {
+            if (!runnersKnownTasks.contains(task.getId())) {
+              waitingTasks.add(
+                  // Would be nice to include the real created date, but the TaskStorage API doesn't yet allow it.
+                  new TaskRunnerWorkItem(
+                      task.getId(),
+                      SettableFuture.create(),
+                      DateTimes.EPOCH,
+                      DateTimes.EPOCH
                   )
+                  {
+                    @Override
+                    public TaskLocation getLocation()
+                    {
+                      return TaskLocation.unknown();
+                    }
+                  }
               );
-            };
-
-            final List<Task> activeTasks = Lists.newArrayList(
-                AuthorizationUtils.filterAuthorizedResources(
-                    req,
-                    allActiveTasks,
-                    raGenerator,
-                    authorizerMapper
-                )
-            );
-
-            final Set<String> runnersKnownTasks = Sets.newHashSet(
-                Iterables.transform(
-                    taskRunner.getKnownTasks(),
-                    new Function<TaskRunnerWorkItem, String>()
-                    {
-                      @Override
-                      public String apply(final TaskRunnerWorkItem workItem)
-                      {
-                        return workItem.getTaskId();
-                      }
-                    }
-                )
-            );
-            final List<TaskRunnerWorkItem> waitingTasks = Lists.newArrayList();
-            for (final Task task : activeTasks) {
-              if (!runnersKnownTasks.contains(task.getId())) {
-                waitingTasks.add(
-                    // Would be nice to include the real created date, but the TaskStorage API doesn't yet allow it.
-                    new TaskRunnerWorkItem(
-                        task.getId(),
-                        SettableFuture.create(),
-                        DateTimes.EPOCH,
-                        DateTimes.EPOCH
-                    )
-                    {
-                      @Override
-                      public TaskLocation getLocation()
-                      {
-                        return TaskLocation.unknown();
-                      }
-                    }
-                );
-              }
             }
-            return waitingTasks;
           }
+          return waitingTasks;
         }
     );
   }
@@ -435,14 +422,7 @@ public class OverlordResource
   public Response getPendingTasks(@Context final HttpServletRequest req)
   {
     return workItemsResponse(
-        new Function<TaskRunner, Collection<? extends TaskRunnerWorkItem>>()
-        {
-          @Override
-          public Collection<? extends TaskRunnerWorkItem> apply(TaskRunner taskRunner)
-          {
-            return securedTaskRunnerWorkItem(taskRunner.getPendingTasks(), req);
-          }
-        }
+        taskRunner -> securedTaskRunnerWorkItem(taskRunner.getPendingTasks(), req)
     );
   }
 
@@ -452,14 +432,7 @@ public class OverlordResource
   public Response getRunningTasks(@Context final HttpServletRequest req)
   {
     return workItemsResponse(
-        new Function<TaskRunner, Collection<? extends TaskRunnerWorkItem>>()
-        {
-          @Override
-          public Collection<? extends TaskRunnerWorkItem> apply(TaskRunner taskRunner)
-          {
-            return securedTaskRunnerWorkItem(taskRunner.getRunningTasks(), req);
-          }
-        }
+        taskRunner -> securedTaskRunnerWorkItem(taskRunner.getRunningTasks(), req)
     );
   }
 
@@ -502,13 +475,14 @@ public class OverlordResource
     final List<TaskStatusPlus> completeTasks = recentlyFinishedTasks
         .stream()
         .map(status -> new TaskStatusPlus(
-            status.getId(),
-            taskStorageQueryAdapter.getCreatedTime(status.getId()),
-            // Would be nice to include the real queue insertion time, but the TaskStorage API doesn't yet allow it.
-            DateTimes.EPOCH,
-            status.getStatusCode(),
-            status.getDuration(),
-            TaskLocation.unknown())
+                 status.getId(),
+                 taskStorageQueryAdapter.getCreatedTime(status.getId()),
+                 // Would be nice to include the real queue insertion time, but the TaskStorage API doesn't yet allow it.
+                 DateTimes.EPOCH,
+                 status.getStatusCode(),
+                 status.getDuration(),
+                 TaskLocation.unknown()
+             )
         )
         .collect(Collectors.toList());
 
@@ -708,5 +682,15 @@ public class OverlordResource
             authorizerMapper
         )
     );
+  }
+
+  @GET
+  @Path("/internal/taskStorage")
+  @Produces(MediaType.APPLICATION_JSON)
+  @ResourceFilters(StateResourceFilter.class)
+  public Response getTaskStroage()
+  {
+    TaskStorageDataHolder data = this.taskMaster.getTaskStorage().getData();
+    return Response.ok(data).build();
   }
 }

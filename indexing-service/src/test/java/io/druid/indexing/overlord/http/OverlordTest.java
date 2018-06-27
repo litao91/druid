@@ -155,7 +155,7 @@ public class OverlordTest
             .andReturn(null).anyTimes();
     EasyMock.replay(taskLockbox, taskActionClientFactory, req);
 
-    taskStorage = new HeapMemoryTaskStorage(new TaskStorageConfig(null));
+    taskStorage = new HeapMemoryTaskStorage(new TaskStorageConfig(null), null, null, null);
     runTaskCountDownLatches = new CountDownLatch[2];
     runTaskCountDownLatches[0] = new CountDownLatch(1);
     runTaskCountDownLatches[1] = new CountDownLatch(1);

@@ -57,6 +57,7 @@ public class TaskMaster
   private final SupervisorManager supervisorManager;
 
   private final AtomicReference<Lifecycle> leaderLifecycleRef = new AtomicReference<>(null);
+  private final TaskStorage taskStorage;
 
   private volatile TaskRunner taskRunner;
   private volatile TaskQueue taskQueue;
@@ -83,6 +84,7 @@ public class TaskMaster
     this.taskActionClientFactory = taskActionClientFactory;
 
     this.overlordLeaderSelector = overlordLeaderSelector;
+    this.taskStorage = taskStorage;
 
     final DruidNode node = coordinatorOverlordServiceConfig.getOverlordService() == null ? selfNode :
                            selfNode.withService(coordinatorOverlordServiceConfig.getOverlordService());
@@ -251,5 +253,10 @@ public class TaskMaster
     } else {
       return Optional.absent();
     }
+  }
+
+  public TaskStorage getTaskStorage()
+  {
+    return this.taskStorage;
   }
 }

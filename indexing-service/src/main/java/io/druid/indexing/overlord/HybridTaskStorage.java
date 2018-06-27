@@ -216,4 +216,10 @@ public class HybridTaskStorage implements TaskStorage
   {
     return heapMemoryTaskStorage.getLocks(taskid);
   }
+
+  @Override
+  public TaskStorageDataHolder getData()
+  {
+    return this.heapMemoryTaskStorage.getData();
+  }
 }
